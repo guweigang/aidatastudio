@@ -100,9 +100,22 @@ jobs:
       - name: Install V
         run: |
           set -eu
+          case "$(uname -m)" in
+            arm64) bootstrap_url="https://github.com/vlang/v/releases/download/0.5.1/v_macos_arm64.zip" ;;
+            x86_64) bootstrap_url="https://github.com/vlang/v/releases/download/0.5.1/v_macos_x86_64.zip" ;;
+            *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          curl -fsSL "$bootstrap_url" -o "${RUNNER_TEMP}/v-bootstrap.zip"
+          rm -rf "${RUNNER_TEMP}/v-bootstrap"
+          unzip -q "${RUNNER_TEMP}/v-bootstrap.zip" -d "${RUNNER_TEMP}/v-bootstrap"
           git clone "${V_REPO}" "${RUNNER_TEMP}/v"
           git -C "${RUNNER_TEMP}/v" checkout "${V_REF}"
-          make -C "${RUNNER_TEMP}/v"
+          chmod +x "${RUNNER_TEMP}/v-bootstrap/v/v"
+          (
+            cd "${RUNNER_TEMP}/v"
+            "${RUNNER_TEMP}/v-bootstrap/v/v" -o v cmd/v
+            ./v -o v cmd/v
+          )
           echo "${RUNNER_TEMP}/v" >> "${GITHUB_PATH}"
 
       - name: Setup Rust
