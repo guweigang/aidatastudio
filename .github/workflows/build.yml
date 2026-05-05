@@ -43,6 +43,8 @@ env:
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-d vjsx_mysql -d use_openssl' }}
+  V_REPO: ${{ vars.V_REPO || 'https://github.com/guweigang/vlang.git' }}
+  V_REF: ${{ vars.V_REF || '06438457b7fed78397588e7c0797b9e0d7483257' }}
 
 jobs:
   macos:
@@ -98,7 +100,8 @@ jobs:
       - name: Install V
         run: |
           set -eu
-          git clone --depth 1 https://github.com/vlang/v.git "${RUNNER_TEMP}/v"
+          git clone "${V_REPO}" "${RUNNER_TEMP}/v"
+          git -C "${RUNNER_TEMP}/v" checkout "${V_REF}"
           make -C "${RUNNER_TEMP}/v"
           echo "${RUNNER_TEMP}/v" >> "${GITHUB_PATH}"
 
