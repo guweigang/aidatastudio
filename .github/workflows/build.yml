@@ -41,7 +41,7 @@ env:
   SOURCE_DIR: source
   VJSX_DIR: vjsx
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
-  CNB_VJSX_REPO: ${{ vars.CNB_VJSX_REPO || 'https://cnb.cool/bullsoft/vjsx.git' }}
+  VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-d vjsx_mysql -d use_openssl' }}
 
 jobs:
@@ -85,7 +85,7 @@ jobs:
       - name: Clone vjsx from CNB
         run: |
           set -eu
-          git clone --depth 1 "${CNB_VJSX_REPO}" "${VJSX_DIR}"
+          git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
 
       - name: Install system dependencies
         run: |

@@ -16,8 +16,8 @@ Open **Actions -> Build AIData Studio -> Run workflow**, then choose:
 
 - `CNB_SOURCE_REPO`: source repository URL. Defaults to
   `https://cnb.cool/bullsoft/vtable.git`.
-- `CNB_VJSX_REPO`: vjsx repository URL. Defaults to
-  `https://cnb.cool/bullsoft/vjsx.git`.
+- `VJSX_REPO`: vjsx repository URL. Defaults to
+  `https://github.com/guweigang/vjsx.git`.
 - `VTABLE_SIDECAR_V_FLAGS`: V compile flags. Defaults to
   `-d vjsx_mysql -d use_openssl`.
 
