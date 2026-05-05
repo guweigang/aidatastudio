@@ -1,0 +1,195 @@
+name: Build AIData Studio
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "CNB source branch, tag, or commit to build"
+        required: true
+        default: "main"
+      release_mode:
+        description: "macOS release mode"
+        required: true
+        default: "unsigned"
+        type: choice
+        options:
+          - unsigned
+          - signed
+          - signed-skip-stapling
+      target_mode:
+        description: "macOS target mode"
+        required: true
+        default: "host"
+        type: choice
+        options:
+          - host
+          - universal
+      publish_github_release:
+        description: "Publish artifacts to a GitHub Release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aidatastudio-build-${{ github.event.inputs.source_ref }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_DIR: source
+  VJSX_DIR: vjsx
+  CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
+  CNB_VJSX_REPO: ${{ vars.CNB_VJSX_REPO || 'https://cnb.cool/bullsoft/vjsx.git' }}
+  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-d vjsx_mysql -d use_openssl' }}
+
+jobs:
+  macos:
+    name: macOS DMG
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Prepare source authentication
+        env:
+          CNB_SSH_PRIVATE_KEY: ${{ secrets.CNB_SSH_PRIVATE_KEY }}
+        run: |
+          set -eu
+          if [ -n "${CNB_SSH_PRIVATE_KEY}" ]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "${CNB_SSH_PRIVATE_KEY}" > ~/.ssh/cnb
+            chmod 600 ~/.ssh/cnb
+            ssh-keyscan cnb.cool >> ~/.ssh/known_hosts
+            cat > ~/.ssh/config <<'EOF'
+          Host cnb.cool
+            HostName cnb.cool
+            IdentityFile ~/.ssh/cnb
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+          fi
+
+      - name: Clone source from CNB
+        run: |
+          set -eu
+          git clone --depth 1 --branch "${{ inputs.source_ref }}" "${CNB_SOURCE_REPO}" "${SOURCE_DIR}" || {
+            git clone "${CNB_SOURCE_REPO}" "${SOURCE_DIR}"
+            cd "${SOURCE_DIR}"
+            git checkout "${{ inputs.source_ref }}"
+          }
+
+      - name: Clone vjsx from CNB
+        run: |
+          set -eu
+          git clone --depth 1 "${CNB_VJSX_REPO}" "${VJSX_DIR}"
+
+      - name: Install system dependencies
+        run: |
+          set -eu
+          brew update
+          brew install openssl@3 pkg-config
+
+      - name: Install V
+        run: |
+          set -eu
+          git clone --depth 1 https://github.com/vlang/v.git "${RUNNER_TEMP}/v"
+          make -C "${RUNNER_TEMP}/v"
+          echo "${RUNNER_TEMP}/v" >> "${GITHUB_PATH}"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        working-directory: source/desktop
+        run: npm ci
+
+      - name: Check desktop and Tauri build inputs
+        working-directory: source
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
+          PKG_CONFIG_PATH: /opt/homebrew/opt/openssl@3/lib/pkgconfig
+        run: |
+          set -eu
+          npm --prefix desktop run check
+          cargo check --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Build macOS release
+        working-directory: source
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
+          PKG_CONFIG_PATH: /opt/homebrew/opt/openssl@3/lib/pkgconfig
+          OUTPUT_DIR: ${{ github.workspace }}/dist/macos
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
+        run: |
+          set -eu
+          case "${{ inputs.release_mode }}:${{ inputs.target_mode }}" in
+            unsigned:host)
+              npm --prefix desktop run release:macos
+              ;;
+            unsigned:universal)
+              npm --prefix desktop run release:macos:universal
+              ;;
+            signed:host)
+              npm --prefix desktop run release:macos:signed
+              ;;
+            signed-skip-stapling:host)
+              npm --prefix desktop run release:macos:signed:skip-stapling
+              ;;
+            *)
+              echo "unsupported release/target combination: ${{ inputs.release_mode }}:${{ inputs.target_mode }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-macos-${{ inputs.source_ref }}-${{ inputs.release_mode }}-${{ inputs.target_mode }}
+          path: dist/macos/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Read release metadata
+        id: release_meta
+        run: |
+          set -eu
+          version="$(node -e "const fs=require('fs'); const p='dist/macos/release.json'; const d=JSON.parse(fs.readFileSync(p,'utf8')); process.stdout.write(d.version)")"
+          artifact="$(node -e "const fs=require('fs'); const p='dist/macos/release.json'; const d=JSON.parse(fs.readFileSync(p,'utf8')); process.stdout.write(d.artifact)")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "artifact=${artifact}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish GitHub Release
+        if: inputs.publish_github_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: AIData Studio ${{ steps.release_meta.outputs.version }}
+          body_path: dist/macos/RELEASE_NOTES.md
+          files: |
+            dist/macos/${{ steps.release_meta.outputs.artifact }}
+            dist/macos/sha256sums.txt
+            dist/macos/release.json
+          fail_on_unmatched_files: true
