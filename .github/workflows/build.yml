@@ -54,23 +54,13 @@ jobs:
       - name: Checkout CI repository
         uses: actions/checkout@v4
 
-      - name: Prepare source authentication
+      - name: Prepare CNB authentication
         env:
-          CNB_SSH_PRIVATE_KEY: ${{ secrets.CNB_SSH_PRIVATE_KEY }}
+          CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
         run: |
           set -eu
-          if [ -n "${CNB_SSH_PRIVATE_KEY}" ]; then
-            mkdir -p ~/.ssh
-            printf '%s\n' "${CNB_SSH_PRIVATE_KEY}" > ~/.ssh/cnb
-            chmod 600 ~/.ssh/cnb
-            ssh-keyscan cnb.cool >> ~/.ssh/known_hosts
-            cat > ~/.ssh/config <<'EOF'
-          Host cnb.cool
-            HostName cnb.cool
-            IdentityFile ~/.ssh/cnb
-            IdentitiesOnly yes
-            StrictHostKeyChecking yes
-          EOF
+          if [ -n "${CNB_ACCESS_TOKEN}" ]; then
+            git config --global url."https://cnb:${CNB_ACCESS_TOKEN}@cnb.cool/".insteadOf "https://cnb.cool/"
           fi
 
       - name: Clone source from CNB

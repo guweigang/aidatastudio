@@ -23,7 +23,9 @@ Open **Actions -> Build AIData Studio -> Run workflow**, then choose:
 
 ## Repository Secrets
 
-- `CNB_SSH_PRIVATE_KEY`: optional SSH private key for private CNB repositories.
+- `CNB_ACCESS_TOKEN`: optional CNB access token or deploy token for private CNB
+  repositories. CNB uses HTTPS authentication with username `cnb` and this
+  token as the password.
 - Apple signing/notarization secrets are optional and only needed for signed
   builds: `APPLE_SIGNING_IDENTITY`, `APPLE_CERTIFICATE`,
   `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`,
