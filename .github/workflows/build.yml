@@ -81,7 +81,19 @@ jobs:
         run: |
           set -eu
           brew update
-          brew install openssl@3 pkg-config
+          brew install bdw-gc mysql-client openssl@3 pkg-config
+          mysql_prefix="$(brew --prefix mysql-client)"
+          openssl_prefix="$(brew --prefix openssl@3)"
+          gc_prefix="$(brew --prefix bdw-gc)"
+          {
+            echo "${mysql_prefix}/bin"
+            echo "${openssl_prefix}/bin"
+          } >> "${GITHUB_PATH}"
+          {
+            echo "PKG_CONFIG_PATH=${mysql_prefix}/lib/pkgconfig:${openssl_prefix}/lib/pkgconfig:${gc_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            echo "CPPFLAGS=-I${mysql_prefix}/include/mysql -I${openssl_prefix}/include -I${gc_prefix}/include ${CPPFLAGS:-}"
+            echo "LDFLAGS=-L${mysql_prefix}/lib -L${openssl_prefix}/lib -L${gc_prefix}/lib ${LDFLAGS:-}"
+          } >> "${GITHUB_ENV}"
 
       - name: Install V
         run: |
@@ -109,7 +121,6 @@ jobs:
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
           OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
-          PKG_CONFIG_PATH: /opt/homebrew/opt/openssl@3/lib/pkgconfig
         run: |
           set -eu
           npm --prefix desktop run check
@@ -120,7 +131,6 @@ jobs:
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
           OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
-          PKG_CONFIG_PATH: /opt/homebrew/opt/openssl@3/lib/pkgconfig
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
