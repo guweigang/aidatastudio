@@ -42,9 +42,7 @@ env:
   VJSX_DIR: vjsx
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
-  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-d vjsx_mysql -d use_openssl' }}
-  V_REPO: ${{ vars.V_REPO || 'https://github.com/guweigang/vlang.git' }}
-  V_REF: ${{ vars.V_REF || '06438457b7fed78397588e7c0797b9e0d7483257' }}
+  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -d vjsx_mysql -d use_openssl' }}
 
 jobs:
   macos:
@@ -100,22 +98,8 @@ jobs:
       - name: Install V
         run: |
           set -eu
-          case "$(uname -m)" in
-            arm64) bootstrap_url="https://github.com/vlang/v/releases/download/0.5.1/v_macos_arm64.zip" ;;
-            x86_64) bootstrap_url="https://github.com/vlang/v/releases/download/0.5.1/v_macos_x86_64.zip" ;;
-            *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
-          esac
-          curl -fsSL "$bootstrap_url" -o "${RUNNER_TEMP}/v-bootstrap.zip"
-          rm -rf "${RUNNER_TEMP}/v-bootstrap"
-          unzip -q "${RUNNER_TEMP}/v-bootstrap.zip" -d "${RUNNER_TEMP}/v-bootstrap"
-          git clone "${V_REPO}" "${RUNNER_TEMP}/v"
-          git -C "${RUNNER_TEMP}/v" checkout "${V_REF}"
-          chmod +x "${RUNNER_TEMP}/v-bootstrap/v/v"
-          (
-            cd "${RUNNER_TEMP}/v"
-            "${RUNNER_TEMP}/v-bootstrap/v/v" -o v cmd/v
-            ./v -o v cmd/v
-          )
+          git clone --depth 1 https://github.com/vlang/v.git "${RUNNER_TEMP}/v"
+          make -C "${RUNNER_TEMP}/v"
           echo "${RUNNER_TEMP}/v" >> "${GITHUB_PATH}"
 
       - name: Setup Rust
