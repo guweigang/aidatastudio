@@ -83,18 +83,21 @@ jobs:
         run: |
           set -eu
           brew update
-          brew install bdw-gc mysql-client openssl@3 pkg-config
+          brew install bdw-gc mysql-client openssl@3 pkg-config sqlite
           mysql_prefix="$(brew --prefix mysql-client)"
           openssl_prefix="$(brew --prefix openssl@3)"
           gc_prefix="$(brew --prefix bdw-gc)"
+          sqlite_prefix="$(brew --prefix sqlite)"
           {
             echo "${mysql_prefix}/bin"
             echo "${openssl_prefix}/bin"
+            echo "${sqlite_prefix}/bin"
           } >> "${GITHUB_PATH}"
           {
-            echo "PKG_CONFIG_PATH=${mysql_prefix}/lib/pkgconfig:${openssl_prefix}/lib/pkgconfig:${gc_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-            echo "CPPFLAGS=-I${mysql_prefix}/include/mysql -I${openssl_prefix}/include -I${gc_prefix}/include ${CPPFLAGS:-}"
-            echo "LDFLAGS=-L${mysql_prefix}/lib -L${openssl_prefix}/lib -L${gc_prefix}/lib ${LDFLAGS:-}"
+            echo "PKG_CONFIG_PATH=${mysql_prefix}/lib/pkgconfig:${openssl_prefix}/lib/pkgconfig:${gc_prefix}/lib/pkgconfig:${sqlite_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            echo "CPPFLAGS=-I${mysql_prefix}/include/mysql -I${openssl_prefix}/include -I${gc_prefix}/include -I${sqlite_prefix}/include ${CPPFLAGS:-}"
+            echo "LDFLAGS=-L${mysql_prefix}/lib -L${openssl_prefix}/lib -L${gc_prefix}/lib -L${sqlite_prefix}/lib ${LDFLAGS:-}"
+            echo "OPENSSL_ROOT_DIR=${openssl_prefix}"
           } >> "${GITHUB_ENV}"
 
       - name: Install V
@@ -129,7 +132,6 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
-          OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
         run: |
           set -eu
           npm --prefix desktop run check
@@ -141,7 +143,6 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
-          OPENSSL_ROOT_DIR: /opt/homebrew/opt/openssl@3
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
