@@ -19,10 +19,12 @@ on:
       target_mode:
         description: "macOS target mode"
         required: true
-        default: "host"
+        default: "apple-silicon"
         type: choice
         options:
           - host
+          - apple-silicon
+          - intel
           - universal
       publish_github_release:
         description: "Publish artifacts to a GitHub Release"
@@ -47,7 +49,7 @@ env:
 jobs:
   macos:
     name: macOS DMG
-    runs-on: macos-14
+    runs-on: ${{ inputs.target_mode == 'intel' && 'macos-13' || 'macos-14' }}
     timeout-minutes: 90
 
     steps:
@@ -150,16 +152,16 @@ jobs:
         run: |
           set -eu
           case "${{ inputs.release_mode }}:${{ inputs.target_mode }}" in
-            unsigned:host)
+            unsigned:host|unsigned:apple-silicon|unsigned:intel)
               npm --prefix desktop run release:macos
               ;;
             unsigned:universal)
               npm --prefix desktop run release:macos:universal
               ;;
-            signed:host)
+            signed:host|signed:apple-silicon|signed:intel)
               npm --prefix desktop run release:macos:signed
               ;;
-            signed-skip-stapling:host)
+            signed-skip-stapling:host|signed-skip-stapling:apple-silicon|signed-skip-stapling:intel)
               npm --prefix desktop run release:macos:signed:skip-stapling
               ;;
             *)
