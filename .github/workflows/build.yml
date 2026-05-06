@@ -36,7 +36,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: aidatastudio-build-${{ github.event.inputs.source_ref }}
+  group: aidatastudio-build-${{ github.event.inputs.source_ref }}-${{ github.event.inputs.target_mode }}
   cancel-in-progress: false
 
 env:
@@ -49,7 +49,7 @@ env:
 jobs:
   macos:
     name: macOS DMG
-    runs-on: ${{ inputs.target_mode == 'intel' && 'macos-13' || 'macos-14' }}
+    runs-on: ${{ inputs.target_mode == 'intel' && 'macos-15-intel' || 'macos-14' }}
     timeout-minutes: 90
 
     steps:
