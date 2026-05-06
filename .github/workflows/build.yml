@@ -168,23 +168,25 @@ jobs:
               ;;
           esac
 
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: aidatastudio-macos-${{ inputs.source_ref }}-${{ inputs.release_mode }}-${{ inputs.target_mode }}
-          path: dist/macos/*
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Read release metadata
         id: release_meta
         run: |
           set -eu
           version="$(node -e "const fs=require('fs'); const p='dist/macos/release.json'; const d=JSON.parse(fs.readFileSync(p,'utf8')); process.stdout.write(d.version)")"
           artifact="$(node -e "const fs=require('fs'); const p='dist/macos/release.json'; const d=JSON.parse(fs.readFileSync(p,'utf8')); process.stdout.write(d.artifact)")"
+          arch="$(node -e "const fs=require('fs'); const p='dist/macos/release.json'; const d=JSON.parse(fs.readFileSync(p,'utf8')); process.stdout.write(d.arch)")"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "artifact=${artifact}" >> "${GITHUB_OUTPUT}"
+          echo "arch=${arch}" >> "${GITHUB_OUTPUT}"
           echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-macos-${{ inputs.source_ref }}-${{ inputs.release_mode }}-${{ steps.release_meta.outputs.arch }}
+          path: dist/macos/*
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Publish GitHub Release
         if: inputs.publish_github_release
