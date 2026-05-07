@@ -318,7 +318,7 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
           & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:x64-windows libmariadb:x64-windows bdw-gc:x64-windows
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:x64-windows libmariadb:x64-windows bdwgc:x64-windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $sdkRoot = Join-Path $vcpkgRoot "installed\x64-windows"
           $vRoot = Join-Path $env:RUNNER_TEMP "vlang"
