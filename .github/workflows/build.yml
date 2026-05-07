@@ -25,6 +25,7 @@ on:
           - host
           - apple-silicon
           - intel
+          - both
           - universal
       publish_github_release:
         description: "Publish artifacts to a GitHub Release"
@@ -50,9 +51,13 @@ env:
 
 jobs:
   macos:
-    name: macOS DMG
-    runs-on: ${{ inputs.target_mode == 'intel' && 'macos-15-intel' || 'macos-14' }}
+    name: macOS DMG (${{ matrix.target_mode }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.target_mode == 'both' && '[{"target_mode":"apple-silicon","runner":"macos-14"},{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'intel' && '[{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'universal' && '[{"target_mode":"universal","runner":"macos-14"}]' || inputs.target_mode == 'host' && '[{"target_mode":"host","runner":"macos-14"}]' || '[{"target_mode":"apple-silicon","runner":"macos-14"}]') }}
 
     steps:
       - name: Checkout CI repository
@@ -165,7 +170,7 @@ jobs:
           APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
         run: |
           set -eu
-          case "${{ inputs.release_mode }}:${{ inputs.target_mode }}" in
+          case "${{ inputs.release_mode }}:${{ matrix.target_mode }}" in
             unsigned:host|unsigned:apple-silicon|unsigned:intel)
               npm --prefix desktop run release:macos
               ;;
@@ -179,7 +184,7 @@ jobs:
               npm --prefix desktop run release:macos:signed:skip-stapling
               ;;
             *)
-              echo "unsupported release/target combination: ${{ inputs.release_mode }}:${{ inputs.target_mode }}" >&2
+              echo "unsupported release/target combination: ${{ inputs.release_mode }}:${{ matrix.target_mode }}" >&2
               exit 1
               ;;
           esac
