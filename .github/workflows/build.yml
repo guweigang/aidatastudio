@@ -301,7 +301,7 @@ jobs:
           $vRoot = Join-Path $env:RUNNER_TEMP "v"
           git clone --depth 1 https://github.com/vlang/v.git $vRoot
           Push-Location $vRoot
-          cmd /c make.bat -msvc
+          cmd /c .\make.bat -msvc
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 0) { exit $code }
