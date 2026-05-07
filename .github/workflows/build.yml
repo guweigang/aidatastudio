@@ -56,6 +56,7 @@ env:
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
+  V_VERSION: ${{ vars.V_VERSION || '0.5.1' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
   VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
 
@@ -291,22 +292,24 @@ jobs:
           cache: npm
           cache-dependency-path: source/desktop/package-lock.json
 
-      - name: Install Tauri CLI
-        shell: pwsh
-        run: cargo install tauri-cli --version "^2" --locked
-
-      - name: Install V from source
+      - name: Setup V on Windows
         shell: pwsh
         run: |
-          $vRoot = Join-Path $env:RUNNER_TEMP "v"
-          git clone --depth 1 https://github.com/vlang/v.git $vRoot
-          Push-Location $vRoot
-          cmd /c .\make.bat -msvc
-          $code = $LASTEXITCODE
-          Pop-Location
-          if ($code -ne 0) { exit $code }
-          & (Join-Path $vRoot "v.exe") -version
-          Add-Content -Path $env:GITHUB_PATH -Value $vRoot
+          $vUrl = "https://github.com/vlang/v/releases/download/$env:V_VERSION/v_windows.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP "v.zip"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "v-extract"
+          $installRoot = Join-Path $env:RUNNER_TEMP "vlang"
+          Invoke-WebRequest -Uri $vUrl -OutFile $zipPath
+          if (Test-Path $extractRoot) {
+            Remove-Item -Recurse -Force $extractRoot
+          }
+          if (Test-Path $installRoot) {
+            Remove-Item -Recurse -Force $installRoot
+          }
+          Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+          Move-Item -Force (Join-Path $extractRoot "v") $installRoot
+          Add-Content -Path $env:GITHUB_PATH -Value $installRoot
+          & (Join-Path $installRoot "v.exe") version
 
       - name: Install Windows native dependencies
         shell: pwsh
@@ -318,7 +321,8 @@ jobs:
           & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:x64-windows libmariadb:x64-windows bdw-gc:x64-windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $sdkRoot = Join-Path $vcpkgRoot "installed\x64-windows"
-          $vMysqlRoot = Join-Path $env:RUNNER_TEMP "v\thirdparty\mysql"
+          $vRoot = Join-Path $env:RUNNER_TEMP "vlang"
+          $vMysqlRoot = Join-Path $vRoot "thirdparty\mysql"
           $vMysqlInclude = Join-Path $vMysqlRoot "include"
           $vMysqlLib = Join-Path $vMysqlRoot "lib"
           New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib | Out-Null
@@ -382,6 +386,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo check --manifest-path desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: cargo install tauri-cli --version "^2" --locked
 
       - name: Stage sidecar runtime DLLs
         working-directory: source
