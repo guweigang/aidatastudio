@@ -42,9 +42,11 @@ concurrency:
 env:
   SOURCE_DIR: source
   VJSX_DIR: vjsx
+  QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
-  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d vjsx_mysql -d use_openssl' }}
+  QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
+  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
 
 jobs:
   macos:
@@ -78,6 +80,11 @@ jobs:
         run: |
           set -eu
           git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
+
+      - name: Clone QuickJS
+        run: |
+          set -eu
+          git clone --depth 1 "${QUICKJS_REPO}" "${QUICKJS_DIR}"
 
       - name: Install system dependencies
         run: |
@@ -132,6 +139,7 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VJS_QUICKJS_PATH: ${{ github.workspace }}/${{ env.QUICKJS_DIR }}
         run: |
           set -eu
           npm --prefix desktop run check
@@ -143,6 +151,7 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VJS_QUICKJS_PATH: ${{ github.workspace }}/${{ env.QUICKJS_DIR }}
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
