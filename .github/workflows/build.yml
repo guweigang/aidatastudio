@@ -358,7 +358,9 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $moduleRoot = Join-Path $env:RUNNER_TEMP "vtable-vmodules-windows"
-          $outputDir = Resolve-Path "backend\bin"
+          $outputDir = "backend\bin"
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+          $outputDir = Resolve-Path $outputDir
           $sidecar = Join-Path $outputDir "vtable-sidecar.exe"
           $targetSidecar = Join-Path $outputDir "vtable-sidecar-x86_64-pc-windows-msvc.exe"
           if (Test-Path $moduleRoot) {
