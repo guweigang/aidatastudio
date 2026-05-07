@@ -3,13 +3,24 @@
 This repository intentionally contains CI and distribution wiring only. Source
 code is fetched from CNB during a manually triggered GitHub Actions run.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="assets/query_results_white.jpeg" alt="Query results in light mode" /></td>
+    <td><img src="assets/query_results_dark.jpeg" alt="Query results in dark mode" /></td>
+    <td><img src="assets/ai_results_dark.jpeg" alt="AI results in dark mode" /></td>
+    <td><img src="assets/ai_model_config_dark.jpeg" alt="AI model configuration in dark mode" /></td>
+  </tr>
+</table>
+
 ## Manual Build
 
 Open **Actions -> Build AIData Studio -> Run workflow**, then choose:
 
 - `source_ref`: CNB branch, tag, or commit to build.
 - `release_mode`: `unsigned`, `signed`, or `signed-skip-stapling`.
-- `target_mode`: `host` or `universal`.
+- `target_mode`: `host`, `apple-silicon`, `intel`, `both`, or `universal`.
 - `publish_github_release`: upload the DMG/checksums to a GitHub Release.
 
 ## Repository Variables
