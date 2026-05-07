@@ -7,6 +7,15 @@ on:
         description: "CNB source branch, tag, or commit to build"
         required: true
         default: "main"
+      platform:
+        description: "Platform to build"
+        required: true
+        default: "macos"
+        type: choice
+        options:
+          - macos
+          - windows
+          - all
       release_mode:
         description: "macOS release mode"
         required: true
@@ -37,7 +46,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: aidatastudio-build-${{ github.event.inputs.source_ref }}-${{ github.event.inputs.target_mode }}
+  group: aidatastudio-build-${{ github.event.inputs.source_ref }}-${{ github.event.inputs.platform }}-${{ github.event.inputs.target_mode }}
   cancel-in-progress: false
 
 env:
@@ -48,10 +57,12 @@ env:
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
 
 jobs:
   macos:
     name: macOS DMG (${{ matrix.target_mode }})
+    if: inputs.platform == 'macos' || inputs.platform == 'all'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
@@ -221,3 +232,217 @@ jobs:
             dist/macos/sha256sums.txt
             dist/macos/release.json
           fail_on_unmatched_files: true
+
+  windows:
+    name: Windows package (x64)
+    if: inputs.platform == 'windows' || inputs.platform == 'all'
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Prepare CNB authentication
+        shell: pwsh
+        env:
+          CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
+        run: |
+          if ($env:CNB_ACCESS_TOKEN) {
+            git config --global url."https://cnb:$env:CNB_ACCESS_TOKEN@cnb.cool/".insteadOf "https://cnb.cool/"
+          }
+
+      - name: Clone source from CNB
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "${{ inputs.source_ref }}" "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
+          if ($LASTEXITCODE -ne 0) {
+            git clone "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Push-Location "$env:SOURCE_DIR"
+            git checkout "${{ inputs.source_ref }}"
+            $code = $LASTEXITCODE
+            Pop-Location
+            if ($code -ne 0) { exit $code }
+          }
+
+      - name: Clone vjsx
+        shell: pwsh
+        run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
+
+      - name: Clone QuickJS
+        shell: pwsh
+        run: git clone --depth 1 "$env:QUICKJS_REPO" "$env:QUICKJS_DIR"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Install V from source
+        shell: pwsh
+        run: |
+          $vRoot = Join-Path $env:RUNNER_TEMP "v"
+          git clone --depth 1 https://github.com/vlang/v.git $vRoot
+          Push-Location $vRoot
+          cmd /c make.bat -msvc
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { exit $code }
+          & (Join-Path $vRoot "v.exe") -version
+          Add-Content -Path $env:GITHUB_PATH -Value $vRoot
+
+      - name: Install Windows native dependencies
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
+          git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
+          & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:x64-windows libmariadb:x64-windows bdw-gc:x64-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sdkRoot = Join-Path $vcpkgRoot "installed\x64-windows"
+          $vMysqlRoot = Join-Path $env:RUNNER_TEMP "v\thirdparty\mysql"
+          $vMysqlInclude = Join-Path $vMysqlRoot "include"
+          $vMysqlLib = Join-Path $vMysqlRoot "lib"
+          New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib | Out-Null
+          $mysqlHeader = Get-ChildItem -Path $sdkRoot -Filter mysql.h -File -Recurse | Select-Object -First 1
+          $mysqlImportLib = Get-ChildItem -Path $sdkRoot -Include libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          $mysqlRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll, libmysql.dll -File -Recurse | Select-Object -First 1
+          if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
+          if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
+          Copy-Item -Recurse -Force (Join-Path $mysqlHeader.DirectoryName "*") $vMysqlInclude
+          Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.lib")
+          if ($null -ne $mysqlRuntimeDll) {
+            Copy-Item -Force $mysqlRuntimeDll.FullName (Join-Path $vMysqlLib "libmysql.dll")
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=$sdkRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "MYSQL_ROOT=$sdkRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INSTALLED_DIR=$sdkRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$sdkRoot\include;$env:INCLUDE"
+          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$sdkRoot\lib;$env:LIB"
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $sdkRoot "bin")
+
+      - name: Install desktop dependencies
+        working-directory: source/desktop
+        shell: pwsh
+        run: npm ci
+
+      - name: Prepare Windows sidecar
+        working-directory: source
+        shell: pwsh
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
+          VJS_QUICKJS_PATH: ${{ github.workspace }}\${{ env.QUICKJS_DIR }}
+          VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $moduleRoot = Join-Path $env:RUNNER_TEMP "vtable-vmodules-windows"
+          $outputDir = Resolve-Path "backend\bin"
+          $sidecar = Join-Path $outputDir "vtable-sidecar.exe"
+          $targetSidecar = Join-Path $outputDir "vtable-sidecar-x86_64-pc-windows-msvc.exe"
+          if (Test-Path $moduleRoot) {
+            Remove-Item -Recurse -Force $moduleRoot
+          }
+          New-Item -ItemType Directory -Force -Path $moduleRoot | Out-Null
+          Copy-Item -Recurse -Force $env:VTABLE_VJSX_PATH (Join-Path $moduleRoot "vjsx")
+          Copy-Item -Recurse -Force (Join-Path $env:VTABLE_VJSX_PATH "runtimejs") (Join-Path $moduleRoot "runtimejs")
+          $env:VMODULES = $moduleRoot
+          $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
+          & v @flags -o $sidecar "backend\cmd\vtable_sidecar"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -Force $sidecar $targetSidecar
+          Get-ChildItem -Path $outputDir -Filter "vtable-sidecar*.exe" | Sort-Object Name | ForEach-Object {
+            Write-Host "prepared $($_.FullName)"
+          }
+
+      - name: Check desktop and Tauri build inputs
+        working-directory: source
+        shell: pwsh
+        run: |
+          npm --prefix desktop run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --manifest-path desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stage sidecar runtime DLLs
+        working-directory: source
+        shell: pwsh
+        run: |
+          $sidecarDir = Resolve-Path "backend\bin"
+          $runtimeDir = Join-Path $sidecarDir "runtime\libs"
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "gc.dll")
+          foreach ($root in $roots) {
+            foreach ($name in $names) {
+              Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item -Force $_.FullName (Join-Path $sidecarDir $_.Name)
+                Copy-Item -Force $_.FullName (Join-Path $runtimeDir $_.Name)
+              }
+            }
+          }
+          Get-ChildItem -Path $sidecarDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged $($_.Name)" }
+
+      - name: Build Windows package
+        working-directory: source
+        shell: pwsh
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
+          VJS_QUICKJS_PATH: ${{ github.workspace }}\${{ env.QUICKJS_DIR }}
+          VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
+        run: |
+          npm --prefix desktop run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"resources":["../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          $dist = Join-Path $env:GITHUB_WORKSPACE "dist\windows"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          $bundleRoot = Join-Path $env:GITHUB_WORKSPACE "source\desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
+          if (!(Test-Path $bundleRoot)) {
+            throw "Windows bundle output not found: $bundleRoot"
+          }
+          Get-ChildItem -Path $bundleRoot -File -Recurse | Where-Object {
+            $_.Extension -in @(".msi", ".exe", ".zip")
+          } | ForEach-Object {
+            Copy-Item -Force $_.FullName (Join-Path $dist $_.Name)
+          }
+          $metadata = [ordered]@{
+            source_ref = "${{ inputs.source_ref }}"
+            platform = "windows"
+            arch = "x64"
+            target = "x86_64-pc-windows-msvc"
+            created_at = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $metadata | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $dist "release.json")
+          Get-ChildItem -Path $dist -File | Sort-Object Name | ForEach-Object { Write-Host $_.FullName }
+
+      - name: Upload Windows workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-windows-${{ inputs.source_ref }}-x64
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
