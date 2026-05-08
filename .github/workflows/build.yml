@@ -310,31 +310,16 @@ jobs:
           Move-Item -Force (Join-Path $extractRoot "v") $installRoot
           $sqliteSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.cpp"
           if (!(Test-Path $sqliteSource)) {
-            $sourceRoot = Join-Path $env:RUNNER_TEMP "v-source"
-            git clone --depth 1 --branch "$env:V_VERSION" https://github.com/vlang/v.git $sourceRoot
-            if ($LASTEXITCODE -ne 0) {
-              if (Test-Path $sourceRoot) {
-                Remove-Item -Recurse -Force $sourceRoot
-              }
-              git clone --depth 1 https://github.com/vlang/v.git $sourceRoot
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-            $installThirdparty = Join-Path $installRoot "thirdparty"
-            New-Item -ItemType Directory -Force -Path $installThirdparty | Out-Null
-            Copy-Item -Recurse -Force (Join-Path $sourceRoot "thirdparty\*") $installThirdparty
-            if (!(Test-Path $sqliteSource)) {
-              $sqliteCSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.c"
-              if (Test-Path $sqliteCSource) {
-                Copy-Item -Force $sqliteCSource $sqliteSource
-              } else {
-                $sourceSqlite = Get-ChildItem -Path (Join-Path $sourceRoot "thirdparty") -Include sqlite3.c, sqlite3.cpp -File -Recurse | Select-Object -First 1
-                if ($null -ne $sourceSqlite) {
-                  New-Item -ItemType Directory -Force -Path (Split-Path $sqliteSource) | Out-Null
-                  Copy-Item -Force $sourceSqlite.FullName $sqliteSource
-                } else {
-                  throw "V thirdparty sqlite source not found at $sqliteSource"
-                }
-              }
+            Push-Location $installRoot
+            & (Join-Path $installRoot "v.exe") run "vlib\db\sqlite\install_thirdparty_sqlite.vsh"
+            $sqliteInstallExitCode = $LASTEXITCODE
+            Pop-Location
+            if ($sqliteInstallExitCode -ne 0) { exit $sqliteInstallExitCode }
+            $sqliteCSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.c"
+            if (Test-Path $sqliteCSource) {
+              Copy-Item -Force $sqliteCSource $sqliteSource
+            } elseif (!(Test-Path $sqliteSource)) {
+              throw "V thirdparty sqlite source not found at $sqliteSource"
             }
           }
           Add-Content -Path $env:GITHUB_PATH -Value $installRoot
