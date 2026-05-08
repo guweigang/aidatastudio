@@ -57,6 +57,7 @@ env:
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   V_VERSION: ${{ vars.V_VERSION || '0.5.1' }}
+  VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
   VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc gcc -show-c-output -d build_quickjs -d vjsx_mysql' }}
 
@@ -292,6 +293,33 @@ jobs:
           cache: npm
           cache-dependency-path: source/desktop/package-lock.json
 
+      - name: Cache Windows vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg-binary-cache
+          key: windows-vcpkg-x64-mingw-dynamic-v1-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            windows-vcpkg-x64-mingw-dynamic-v1-
+
+      - name: Cache Windows Cargo tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri.exe
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-tools-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-tools-v1-
+
+      - name: Cache Windows Tauri target
+        uses: actions/cache@v4
+        with:
+          path: source/desktop/src-tauri/target
+          key: windows-tauri-target-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-tauri-target-v1-
+
       - name: Setup V on Windows
         shell: pwsh
         run: |
@@ -328,6 +356,9 @@ jobs:
       - name: Install Windows native dependencies
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "$env:VCPKG_BINARY_CACHE_DIR" | Out-Null
+          $env:VCPKG_DEFAULT_BINARY_CACHE = "$env:VCPKG_BINARY_CACHE_DIR"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_DEFAULT_BINARY_CACHE=$env:VCPKG_BINARY_CACHE_DIR"
           $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
           git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
           & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
@@ -414,7 +445,12 @@ jobs:
 
       - name: Install Tauri CLI
         shell: pwsh
-        run: cargo install tauri-cli --version "^2" --locked
+        run: |
+          if (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
+            cargo tauri --version
+          } else {
+            cargo install tauri-cli --version "^2" --locked
+          }
 
       - name: Stage sidecar runtime DLLs
         working-directory: source
