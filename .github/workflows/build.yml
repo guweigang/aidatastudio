@@ -435,6 +435,28 @@ jobs:
           }
           Get-ChildItem -Path $sidecarDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged $($_.Name)" }
 
+      - name: Prepare Windows Tauri icon
+        working-directory: source
+        shell: pwsh
+        run: |
+          $iconDir = "desktop\src-tauri\icons"
+          $icoPath = Join-Path $iconDir "icon.ico"
+          if (!(Test-Path $icoPath)) {
+            $sourceIcon = Join-Path $iconDir "128x128@2x.png"
+            if (!(Test-Path $sourceIcon)) {
+              $sourceIcon = Join-Path $iconDir "128x128.png"
+            }
+            if (!(Test-Path $sourceIcon)) {
+              throw "Tauri Windows icon source not found under $iconDir"
+            }
+            magick $sourceIcon -define icon:auto-resize=256,128,64,48,32,16 $icoPath
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (!(Test-Path $icoPath)) {
+            throw "Tauri Windows icon was not prepared at $icoPath"
+          }
+          Write-Host "prepared $icoPath"
+
       - name: Build Windows package
         working-directory: source
         shell: pwsh
@@ -445,7 +467,7 @@ jobs:
         run: |
           npm --prefix desktop run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"resources":["../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
+          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":["../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect Windows artifacts
