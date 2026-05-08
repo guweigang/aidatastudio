@@ -58,7 +58,7 @@ env:
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   V_VERSION: ${{ vars.V_VERSION || '0.5.1' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs -d vjsx_mysql -d use_openssl' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc gcc -show-c-output -d build_quickjs -d vjsx_mysql' }}
 
 jobs:
   macos:
@@ -332,16 +332,17 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
           & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:x64-windows libmariadb:x64-windows bdwgc:x64-windows
+          $triplet = "x64-mingw-dynamic"
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet bdwgc:$triplet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $sdkRoot = Join-Path $vcpkgRoot "installed\x64-windows"
+          $sdkRoot = Join-Path $vcpkgRoot "installed\$triplet"
           $vRoot = Join-Path $env:RUNNER_TEMP "vlang"
           $vMysqlRoot = Join-Path $vRoot "thirdparty\mysql"
           $vMysqlInclude = Join-Path $vMysqlRoot "include"
           $vMysqlLib = Join-Path $vMysqlRoot "lib"
           New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib | Out-Null
           $mysqlHeader = Get-ChildItem -Path $sdkRoot -Filter mysql.h -File -Recurse | Select-Object -First 1
-          $mysqlImportLib = Get-ChildItem -Path $sdkRoot -Include libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          $mysqlImportLib = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
           $mysqlRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll, libmysql.dll -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
@@ -353,8 +354,9 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "MYSQL_ROOT=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INSTALLED_DIR=$sdkRoot"
-          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$sdkRoot\include;$env:INCLUDE"
-          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$sdkRoot\lib;$env:LIB"
+          Add-Content -Path $env:GITHUB_ENV -Value "C_INCLUDE_PATH=$sdkRoot\include;$env:C_INCLUDE_PATH"
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBRARY_PATH=$sdkRoot\lib;$env:LIBRARY_PATH"
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_CONFIG_PATH=$sdkRoot\lib\pkgconfig;$sdkRoot\share\pkgconfig;$env:PKG_CONFIG_PATH"
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $sdkRoot "bin")
 
       - name: Install desktop dependencies
@@ -414,8 +416,8 @@ jobs:
           $sidecarDir = Resolve-Path "backend\bin"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "gc.dll")
+          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, "C:\mingw64") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "gc.dll", "libgcc_s_*.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "zlib*.dll", "libzstd.dll", "libiconv-2.dll")
           foreach ($root in $roots) {
             foreach ($name in $names) {
               Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
