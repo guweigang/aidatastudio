@@ -319,13 +319,21 @@ jobs:
               git clone --depth 1 https://github.com/vlang/v.git $sourceRoot
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
-            Copy-Item -Recurse -Force (Join-Path $sourceRoot "thirdparty") $installRoot
+            $installThirdparty = Join-Path $installRoot "thirdparty"
+            New-Item -ItemType Directory -Force -Path $installThirdparty | Out-Null
+            Copy-Item -Recurse -Force (Join-Path $sourceRoot "thirdparty\*") $installThirdparty
             if (!(Test-Path $sqliteSource)) {
               $sqliteCSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.c"
               if (Test-Path $sqliteCSource) {
                 Copy-Item -Force $sqliteCSource $sqliteSource
               } else {
-                throw "V thirdparty sqlite source not found at $sqliteSource"
+                $sourceSqlite = Get-ChildItem -Path (Join-Path $sourceRoot "thirdparty") -Include sqlite3.c, sqlite3.cpp -File -Recurse | Select-Object -First 1
+                if ($null -ne $sourceSqlite) {
+                  New-Item -ItemType Directory -Force -Path (Split-Path $sqliteSource) | Out-Null
+                  Copy-Item -Force $sourceSqlite.FullName $sqliteSource
+                } else {
+                  throw "V thirdparty sqlite source not found at $sqliteSource"
+                }
               }
             }
           }
