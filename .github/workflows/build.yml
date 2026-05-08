@@ -389,10 +389,13 @@ jobs:
           Copy-Item -Recurse -Force (Join-Path $env:VTABLE_VJSX_PATH "runtimejs") (Join-Path $moduleRoot "runtimejs")
           $env:VMODULES = $moduleRoot
           $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
-          $mysqlLibDir = Join-Path $env:MYSQL_ROOT "lib"
-          $flags += @("-cflags", "-L$mysqlLibDir -lmariadb")
+          $mysqlImportLib = Get-ChildItem -Path $env:MYSQL_ROOT -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $env:MYSQL_ROOT" }
+          $mysqlLinkLib = $mysqlImportLib.FullName.Replace('\', '/')
+          $flags += @("-showcc", "-ldflags", $mysqlLinkLib)
           & v @flags -o $sidecar "backend\cmd\vtable_sidecar"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path $sidecar)) { throw "sidecar build did not produce $sidecar" }
           Copy-Item -Force $sidecar $targetSidecar
           Get-ChildItem -Path $outputDir -Filter "vtable-sidecar*.exe" | Sort-Object Name | ForEach-Object {
             Write-Host "prepared $($_.FullName)"
