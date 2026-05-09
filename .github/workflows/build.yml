@@ -58,7 +58,7 @@ env:
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc gcc -show-c-output -d build_quickjs' }}
 
 jobs:
   macos:
@@ -323,9 +323,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/vcpkg-binary-cache
-          key: windows-vcpkg-x64-windows-v1-${{ hashFiles('.github/workflows/build.yml') }}
+          key: windows-vcpkg-x64-mingw-dynamic-v1-${{ hashFiles('.github/workflows/build.yml') }}
           restore-keys: |
-            windows-vcpkg-x64-windows-v1-
+            windows-vcpkg-x64-mingw-dynamic-v1-
 
       - name: Cache Windows Cargo tools
         uses: actions/cache@v4
@@ -387,7 +387,7 @@ jobs:
           git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
           & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $triplet = "x64-windows"
+          $triplet = "x64-mingw-dynamic"
           & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet libpq:$triplet bdwgc:$triplet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $sdkRoot = Join-Path $vcpkgRoot "installed\$triplet"
@@ -400,25 +400,38 @@ jobs:
           $vPgLib = Join-Path $vPgRoot "win64"
           New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib, $vPgInclude, $vPgLib | Out-Null
           $mysqlHeader = Get-ChildItem -Path $sdkRoot -Filter mysql.h -File -Recurse | Select-Object -First 1
-          $mysqlImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include libmariadb.lib, libmysql.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          $mysqlImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
           $mysqlRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll, libmysql.dll -File -Recurse | Select-Object -First 1
           $pgHeader = Get-ChildItem -Path $sdkRoot -Filter libpq-fe.h -File -Recurse | Select-Object -First 1
           $pgConfigHeader = Get-ChildItem -Path $sdkRoot -Filter pg_config.h -File -Recurse | Select-Object -First 1
-          $pgImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include libpq.lib -File -Recurse | Select-Object -First 1
+          $pgImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include libpq.dll.a, libpq.lib -File -Recurse | Select-Object -First 1
           $pgRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libpq.dll -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
           if ($null -eq $pgHeader) { throw "libpq-fe.h not found under $sdkRoot" }
           if ($null -eq $pgConfigHeader) { throw "pg_config.h not found under $sdkRoot" }
           if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $sdkRoot" }
+          $mysqlCdefs = Join-Path $vRoot "vlib\db\mysql\_cdefs_windows.c.v"
+          Set-Content -Encoding utf8 -Path $mysqlCdefs -Value @'
+module mysql
+
+#flag windows -I@VEXEROOT/thirdparty/mysql/include
+#flag windows -L@VEXEROOT/thirdparty/mysql/lib
+#flag windows -lmysql
+
+#include <mysql.h> # Please install https://dev.mysql.com/downloads/installer/ , then copy the include, lib, and bin folders to thirdparty/mysql. Make sure thirdparty/mysql/bin and thirdparty/mysql/lib are on PATH, or copy libmysql.dll next to the produced .exe
+'@
           Copy-Item -Recurse -Force (Join-Path $mysqlHeader.DirectoryName "*") $vMysqlInclude
           Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.lib")
+          Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.dll.a")
+          Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmariadb.dll.a")
           if ($null -ne $mysqlRuntimeDll) {
             Copy-Item -Force $mysqlRuntimeDll.FullName (Join-Path $vMysqlLib "libmysql.dll")
           }
           Copy-Item -Recurse -Force (Join-Path $pgHeader.DirectoryName "*") $vPgInclude
           Copy-Item -Force $pgConfigHeader.FullName (Join-Path $vPgInclude "pg_config.h")
           Copy-Item -Force $pgImportLib.FullName (Join-Path $vPgLib "libpq.lib")
+          Copy-Item -Force $pgImportLib.FullName (Join-Path $vPgLib "libpq.dll.a")
           if ($null -ne $pgRuntimeDll) {
             Copy-Item -Force $pgRuntimeDll.FullName (Join-Path $vPgLib "libpq.dll")
           }
@@ -459,8 +472,8 @@ jobs:
           Copy-Item -Recurse -Force (Join-Path $env:VTABLE_VJSX_PATH "runtimejs") (Join-Path $moduleRoot "runtimejs")
           $env:VMODULES = $moduleRoot
           $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
-          $mysqlImportLib = Get-ChildItem -Path (Join-Path $env:MYSQL_ROOT "lib") -Include libmariadb.lib, libmysql.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
-          $pgImportLib = Get-ChildItem -Path (Join-Path $env:POSTGRES_ROOT "lib") -Include libpq.lib -File -Recurse | Select-Object -First 1
+          $mysqlImportLib = Get-ChildItem -Path (Join-Path $env:MYSQL_ROOT "lib") -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          $pgImportLib = Get-ChildItem -Path (Join-Path $env:POSTGRES_ROOT "lib") -Include libpq.dll.a, libpq.lib -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $env:MYSQL_ROOT" }
           if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $env:POSTGRES_ROOT" }
           $flags += @("-showcc")
