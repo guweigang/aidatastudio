@@ -108,21 +108,24 @@ jobs:
         run: |
           set -eu
           brew update
-          brew install bdw-gc mysql-client openssl@3 pkg-config sqlite
+          brew install bdw-gc libpq mysql-client openssl@3 pkg-config sqlite
           mysql_prefix="$(brew --prefix mysql-client)"
+          libpq_prefix="$(brew --prefix libpq)"
           openssl_prefix="$(brew --prefix openssl@3)"
           gc_prefix="$(brew --prefix bdw-gc)"
           sqlite_prefix="$(brew --prefix sqlite)"
           {
             echo "${mysql_prefix}/bin"
+            echo "${libpq_prefix}/bin"
             echo "${openssl_prefix}/bin"
             echo "${sqlite_prefix}/bin"
           } >> "${GITHUB_PATH}"
           {
-            echo "PKG_CONFIG_PATH=${mysql_prefix}/lib/pkgconfig:${openssl_prefix}/lib/pkgconfig:${gc_prefix}/lib/pkgconfig:${sqlite_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-            echo "CPPFLAGS=-I${mysql_prefix}/include/mysql -I${openssl_prefix}/include -I${gc_prefix}/include -I${sqlite_prefix}/include ${CPPFLAGS:-}"
-            echo "LDFLAGS=-L${mysql_prefix}/lib -L${openssl_prefix}/lib -L${gc_prefix}/lib -L${sqlite_prefix}/lib ${LDFLAGS:-}"
+            echo "PKG_CONFIG_PATH=${mysql_prefix}/lib/pkgconfig:${libpq_prefix}/lib/pkgconfig:${openssl_prefix}/lib/pkgconfig:${gc_prefix}/lib/pkgconfig:${sqlite_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            echo "CPPFLAGS=-I${mysql_prefix}/include/mysql -I${libpq_prefix}/include -I${openssl_prefix}/include -I${gc_prefix}/include -I${sqlite_prefix}/include ${CPPFLAGS:-}"
+            echo "LDFLAGS=-L${mysql_prefix}/lib -L${libpq_prefix}/lib -L${openssl_prefix}/lib -L${gc_prefix}/lib -L${sqlite_prefix}/lib ${LDFLAGS:-}"
             echo "OPENSSL_ROOT_DIR=${openssl_prefix}"
+            echo "POSTGRES_ROOT=${libpq_prefix}"
           } >> "${GITHUB_ENV}"
 
       - name: Install V
@@ -364,19 +367,29 @@ jobs:
           & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $triplet = "x64-mingw-dynamic"
-          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet bdwgc:$triplet
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet libpq:$triplet bdwgc:$triplet
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $sdkRoot = Join-Path $vcpkgRoot "installed\$triplet"
           $vRoot = Join-Path $env:RUNNER_TEMP "vlang"
           $vMysqlRoot = Join-Path $vRoot "thirdparty\mysql"
           $vMysqlInclude = Join-Path $vMysqlRoot "include"
           $vMysqlLib = Join-Path $vMysqlRoot "lib"
-          New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib | Out-Null
+          $vPgRoot = Join-Path $vRoot "thirdparty\pg"
+          $vPgInclude = Join-Path $vPgRoot "libpq"
+          $vPgLib = Join-Path $vPgRoot "win64"
+          New-Item -ItemType Directory -Force -Path $vMysqlInclude, $vMysqlLib, $vPgInclude, $vPgLib | Out-Null
           $mysqlHeader = Get-ChildItem -Path $sdkRoot -Filter mysql.h -File -Recurse | Select-Object -First 1
           $mysqlImportLib = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
           $mysqlRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libmariadb.dll, libmysql.dll -File -Recurse | Select-Object -First 1
+          $pgHeader = Get-ChildItem -Path $sdkRoot -Filter libpq-fe.h -File -Recurse | Select-Object -First 1
+          $pgConfigHeader = Get-ChildItem -Path $sdkRoot -Filter pg_config.h -File -Recurse | Select-Object -First 1
+          $pgImportLib = Get-ChildItem -Path $sdkRoot -Include libpq.dll.a, libpq.lib -File -Recurse | Select-Object -First 1
+          $pgRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libpq.dll -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
+          if ($null -eq $pgHeader) { throw "libpq-fe.h not found under $sdkRoot" }
+          if ($null -eq $pgConfigHeader) { throw "pg_config.h not found under $sdkRoot" }
+          if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $sdkRoot" }
           Copy-Item -Recurse -Force (Join-Path $mysqlHeader.DirectoryName "*") $vMysqlInclude
           Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.lib")
           Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.dll.a")
@@ -384,8 +397,16 @@ jobs:
           if ($null -ne $mysqlRuntimeDll) {
             Copy-Item -Force $mysqlRuntimeDll.FullName (Join-Path $vMysqlLib "libmysql.dll")
           }
+          Copy-Item -Recurse -Force (Join-Path $pgHeader.DirectoryName "*") $vPgInclude
+          Copy-Item -Force $pgConfigHeader.FullName (Join-Path $vPgInclude "pg_config.h")
+          Copy-Item -Force $pgImportLib.FullName (Join-Path $vPgLib "libpq.lib")
+          Copy-Item -Force $pgImportLib.FullName (Join-Path $vPgLib "libpq.dll.a")
+          if ($null -ne $pgRuntimeDll) {
+            Copy-Item -Force $pgRuntimeDll.FullName (Join-Path $vPgLib "libpq.dll")
+          }
           Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "MYSQL_ROOT=$sdkRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "POSTGRES_ROOT=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INSTALLED_DIR=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "C_INCLUDE_PATH=$sdkRoot\include;$env:C_INCLUDE_PATH"
           Add-Content -Path $env:GITHUB_ENV -Value "LIBRARY_PATH=$sdkRoot\lib;$env:LIBRARY_PATH"
@@ -421,9 +442,12 @@ jobs:
           $env:VMODULES = $moduleRoot
           $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
           $mysqlImportLib = Get-ChildItem -Path $env:MYSQL_ROOT -Include libmariadb.dll.a, libmysql.dll.a, libmariadb.lib, mysqlclient.lib -File -Recurse | Select-Object -First 1
+          $pgImportLib = Get-ChildItem -Path $env:POSTGRES_ROOT -Include libpq.dll.a, libpq.lib -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $env:MYSQL_ROOT" }
+          if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $env:POSTGRES_ROOT" }
           $mysqlLinkLib = $mysqlImportLib.FullName.Replace('\', '/')
-          $flags += @("-showcc", "-ldflags", $mysqlLinkLib)
+          $pgLinkLib = $pgImportLib.FullName.Replace('\', '/')
+          $flags += @("-showcc", "-ldflags", "$mysqlLinkLib $pgLinkLib")
           & v @flags -o $sidecar "backend\cmd\vtable_sidecar"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path $sidecar)) { throw "sidecar build did not produce $sidecar" }
@@ -459,8 +483,8 @@ jobs:
           $sidecarDir = Resolve-Path "backend\bin"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, "C:\mingw64") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "gc.dll", "libgcc_s_*.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "zlib*.dll", "libzstd.dll", "libiconv-2.dll")
+          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT, "C:\mingw64") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "libpq.dll", "gc.dll", "libgcc_s_*.dll", "libstdc++-6.dll", "libwinpthread-1.dll", "zlib*.dll", "libzstd.dll", "libiconv-*.dll", "libintl-*.dll", "libcharset-*.dll", "libldap*.dll", "libsasl*.dll")
           foreach ($root in $roots) {
             foreach ($name in $names) {
               Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
