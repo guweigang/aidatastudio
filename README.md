@@ -14,6 +14,30 @@ code is fetched from CNB during a manually triggered GitHub Actions run.
   </tr>
 </table>
 
+## Installation
+
+### Windows
+
+You can download the installer .exe from GitHub releases.
+
+### macOS
+
+Download the .dmg from GitHub releases.
+
+After copying `AI Data Studio.app` to your Applications folder, you may see the
+following error message:
+
+```text
+"AI Data Studio.app" is damaged and can't be opened. You should move it to the Bin.
+```
+
+This is Apple lying to you. Nothing is "damaged", it's just not code-signed with
+an Apple Developer certificate. To fix it, run the following command:
+
+```sh
+xattr -rd com.apple.quarantine /Applications/AI\ Data\ Studio.app
+```
+
 ## Manual Build
 
 Open **Actions -> Build AIData Studio -> Run workflow**, then choose:
