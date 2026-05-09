@@ -468,7 +468,7 @@ jobs:
           if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $env:POSTGRES_ROOT" }
           $mysqlLinkLib = $mysqlImportLib.FullName.Replace('\', '/')
           $pgLinkLib = $pgImportLib.FullName.Replace('\', '/')
-          $flags += @("-showcc", "-ldflags", "$mysqlLinkLib $pgLinkLib")
+          $flags += @("-showcc", "-ldflags", "-x none $mysqlLinkLib $pgLinkLib")
           & v @flags -o $sidecar "backend\cmd\vtable_sidecar"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path $sidecar)) { throw "sidecar build did not produce $sidecar" }
