@@ -56,7 +56,6 @@ env:
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
-  V_VERSION: ${{ vars.V_VERSION || '0.5.1' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d use_openssl' }}
   VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc gcc -show-c-output -d build_quickjs' }}
@@ -350,19 +349,16 @@ jobs:
       - name: Setup V on Windows
         shell: pwsh
         run: |
-          $vUrl = "https://github.com/vlang/v/releases/download/$env:V_VERSION/v_windows.zip"
-          $zipPath = Join-Path $env:RUNNER_TEMP "v.zip"
-          $extractRoot = Join-Path $env:RUNNER_TEMP "v-extract"
           $installRoot = Join-Path $env:RUNNER_TEMP "vlang"
-          Invoke-WebRequest -Uri $vUrl -OutFile $zipPath
-          if (Test-Path $extractRoot) {
-            Remove-Item -Recurse -Force $extractRoot
-          }
           if (Test-Path $installRoot) {
             Remove-Item -Recurse -Force $installRoot
           }
-          Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
-          Move-Item -Force (Join-Path $extractRoot "v") $installRoot
+          git clone --depth 1 https://github.com/vlang/v.git $installRoot
+          Push-Location $installRoot
+          cmd /c makev.bat -msvc
+          $vBuildExitCode = $LASTEXITCODE
+          Pop-Location
+          if ($vBuildExitCode -ne 0) { exit $vBuildExitCode }
           $sqliteSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.cpp"
           if (!(Test-Path $sqliteSource)) {
             Push-Location $installRoot
@@ -379,6 +375,7 @@ jobs:
           }
           Add-Content -Path $env:GITHUB_PATH -Value $installRoot
           & (Join-Path $installRoot "v.exe") version
+          git -C $installRoot log -1 --oneline
 
       - name: Install Windows native dependencies
         shell: pwsh
