@@ -531,17 +531,44 @@ jobs:
           $sidecarDir = Resolve-Path "backend\bin"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT, $env:VCToolsRedistDir) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          function Copy-DependencyDll([System.IO.FileInfo]$dll) {
+            $sidecarTarget = Join-Path $sidecarDir $dll.Name
+            $runtimeTarget = Join-Path $runtimeDir $dll.Name
+            Copy-Item -Force $dll.FullName $sidecarTarget
+            Copy-Item -Force $dll.FullName $runtimeTarget
+          }
+
+          $vcpkgBin = Join-Path $env:VCPKG_INSTALLED_DIR "bin"
+          if (Test-Path $vcpkgBin) {
+            Get-ChildItem -Path $vcpkgBin -Filter "*.dll" -File | ForEach-Object {
+              Copy-DependencyDll $_
+            }
+          }
+
+          $roots = @($env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT, $env:VCToolsRedistDir) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
           $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "libpq.dll", "gc.dll", "zlib*.dll", "zlib1.dll", "lz4.dll", "liblz4.dll", "zstd.dll", "libzstd.dll", "libiconv*.dll", "iconv*.dll", "libintl*.dll", "intl*.dll", "libcharset*.dll", "charset*.dll", "libldap*.dll", "libsasl*.dll", "vcruntime*.dll", "msvcp*.dll", "concrt*.dll")
           foreach ($root in $roots) {
             foreach ($name in $names) {
               Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-                Copy-Item -Force $_.FullName (Join-Path $sidecarDir $_.Name)
-                Copy-Item -Force $_.FullName (Join-Path $runtimeDir $_.Name)
+                Copy-DependencyDll $_
               }
             }
           }
           Get-ChildItem -Path $sidecarDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged $($_.Name)" }
+
+      - name: Inspect Windows sidecar dependencies
+        working-directory: source
+        shell: pwsh
+        run: |
+          if (Get-Command dumpbin -ErrorAction SilentlyContinue) {
+            dumpbin /DEPENDENTS "backend\bin\vtable-sidecar.exe"
+            Get-ChildItem -Path "backend\bin" -Filter "*.dll" -File | Sort-Object Name | ForEach-Object {
+              Write-Host "DEPENDENTS $($_.Name)"
+              dumpbin /DEPENDENTS $_.FullName
+            }
+          } else {
+            Write-Warning "dumpbin not found; skipping dependency inspection"
+          }
 
       - name: Doctor Windows sidecar runtime
         working-directory: source
