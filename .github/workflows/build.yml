@@ -545,14 +545,12 @@ jobs:
             }
           }
 
-          $roots = @($env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT, $env:VCToolsRedistDir) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "libpq.dll", "gc.dll", "zlib*.dll", "zlib1.dll", "lz4.dll", "liblz4.dll", "zstd.dll", "libzstd.dll", "libiconv*.dll", "iconv*.dll", "libintl*.dll", "intl*.dll", "libcharset*.dll", "charset*.dll", "libldap*.dll", "libsasl*.dll", "vcruntime*.dll", "msvcp*.dll", "concrt*.dll")
-          foreach ($root in $roots) {
-            foreach ($name in $names) {
-              Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+          if ($env:VCToolsRedistDir -and (Test-Path $env:VCToolsRedistDir)) {
+            Get-ChildItem -Path $env:VCToolsRedistDir -Filter "*.dll" -File -Recurse |
+              Where-Object { $_.FullName -match "\\x64\\Microsoft\.VC\d+\.CRT\\" } |
+              ForEach-Object {
                 Copy-DependencyDll $_
               }
-            }
           }
           Get-ChildItem -Path $sidecarDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged $($_.Name)" }
 
