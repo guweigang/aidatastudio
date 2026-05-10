@@ -408,11 +408,16 @@ jobs:
           $pgConfigHeader = Get-ChildItem -Path $sdkRoot -Filter pg_config.h -File -Recurse | Select-Object -First 1
           $pgImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include libpq.lib, pq.lib -File -Recurse | Select-Object -First 1
           $pgRuntimeDll = Get-ChildItem -Path $sdkRoot -Include libpq.dll -File -Recurse | Select-Object -First 1
+          $opensslLibDir = Join-Path $sdkRoot "lib"
+          $cryptoImportLib = Get-ChildItem -Path $opensslLibDir -Include libcrypto.lib, crypto.lib -File -Recurse | Select-Object -First 1
+          $sslImportLib = Get-ChildItem -Path $opensslLibDir -Include libssl.lib, ssl.lib -File -Recurse | Select-Object -First 1
           if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
           if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
           if ($null -eq $pgHeader) { throw "libpq-fe.h not found under $sdkRoot" }
           if ($null -eq $pgConfigHeader) { throw "pg_config.h not found under $sdkRoot" }
           if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $sdkRoot" }
+          if ($null -eq $cryptoImportLib) { throw "OpenSSL crypto import library not found under $sdkRoot" }
+          if ($null -eq $sslImportLib) { throw "OpenSSL ssl import library not found under $sdkRoot" }
           $mysqlCdefs = Join-Path $vRoot "vlib\db\mysql\_cdefs_windows.c.v"
           Set-Content -Encoding utf8 -Path $mysqlCdefs -Value @'
           module mysql
@@ -437,6 +442,10 @@ jobs:
           if ($null -ne $pgRuntimeDll) {
             Copy-Item -Force $pgRuntimeDll.FullName (Join-Path $vPgLib "libpq.dll")
           }
+          Copy-Item -Force $cryptoImportLib.FullName (Join-Path $opensslLibDir "crypto.lib")
+          Copy-Item -Force $cryptoImportLib.FullName (Join-Path $opensslLibDir "libcrypto.lib")
+          Copy-Item -Force $sslImportLib.FullName (Join-Path $opensslLibDir "ssl.lib")
+          Copy-Item -Force $sslImportLib.FullName (Join-Path $opensslLibDir "libssl.lib")
           Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "MYSQL_ROOT=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "POSTGRES_ROOT=$sdkRoot"
