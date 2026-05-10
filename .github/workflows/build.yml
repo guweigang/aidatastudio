@@ -58,7 +58,7 @@ env:
   QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs -d quickjs_ng' }}
 
 jobs:
   macos:
@@ -300,7 +300,9 @@ jobs:
 
       - name: Clone QuickJS
         shell: pwsh
-        run: git clone --depth 1 "$env:QUICKJS_REPO" "$env:QUICKJS_DIR"
+        env:
+          QUICKJS_WINDOWS_REPO: ${{ vars.QUICKJS_WINDOWS_REPO || 'https://github.com/quickjs-ng/quickjs.git' }}
+        run: git clone --depth 1 "$env:QUICKJS_WINDOWS_REPO" "$env:QUICKJS_DIR"
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
