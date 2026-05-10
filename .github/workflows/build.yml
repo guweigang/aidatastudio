@@ -614,6 +614,39 @@ jobs:
           cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":["../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Doctor extracted Windows installer
+        working-directory: source
+        shell: pwsh
+        run: |
+          $bundleRoot = "desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
+          $msi = Get-ChildItem -Path $bundleRoot -Filter "*.msi" -File -Recurse | Select-Object -First 1
+          if ($null -eq $msi) {
+            throw "Windows MSI output not found under $bundleRoot"
+          }
+
+          $extractDir = Join-Path $env:RUNNER_TEMP "aidatastudio-msi-extract"
+          if (Test-Path $extractDir) {
+            Remove-Item -Recurse -Force $extractDir
+          }
+          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+
+          $process = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/a", $msi.FullName, "/qn", "TARGETDIR=$extractDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "MSI administrative extract failed with exit code $($process.ExitCode)"
+          }
+
+          Get-ChildItem -Path $extractDir -File -Recurse |
+            Where-Object { $_.Name -match "^(vtable-sidecar|libmariadb|libpq|libssl|libcrypto|z|vcruntime|msvcp|concrt)" } |
+            Sort-Object FullName |
+            ForEach-Object { Write-Host "extracted $($_.FullName)" }
+
+          $sidecar = Get-ChildItem -Path $extractDir -Filter "vtable-sidecar.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $sidecar) {
+            throw "Extracted installer does not contain vtable-sidecar.exe"
+          }
+
+          & "desktop\scripts\doctor-runtime-libs.ps1" -SidecarPath $sidecar.FullName
+
       - name: Collect Windows artifacts
         shell: pwsh
         run: |
