@@ -531,8 +531,8 @@ jobs:
           $sidecarDir = Resolve-Path "backend\bin"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "libpq.dll", "gc.dll", "zlib*.dll", "zstd.dll", "libzstd.dll", "libiconv-*.dll", "libintl-*.dll", "libcharset-*.dll", "libldap*.dll", "libsasl*.dll")
+          $roots = @($env:VCPKG_INSTALLED_DIR, $env:OPENSSL_ROOT_DIR, $env:MYSQL_ROOT, $env:POSTGRES_ROOT, $env:VCToolsRedistDir) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+          $names = @("libssl-*.dll", "libcrypto-*.dll", "libmariadb.dll", "libmysql.dll", "libpq.dll", "gc.dll", "zlib*.dll", "zstd.dll", "libzstd.dll", "libiconv-*.dll", "libintl-*.dll", "libcharset-*.dll", "libldap*.dll", "libsasl*.dll", "vcruntime*.dll", "msvcp*.dll", "concrt*.dll")
           foreach ($root in $roots) {
             foreach ($name in $names) {
               Get-ChildItem -Path $root -Filter $name -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
