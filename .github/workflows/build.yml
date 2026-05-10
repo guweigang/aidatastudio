@@ -442,10 +442,18 @@ jobs:
           if ($null -ne $pgRuntimeDll) {
             Copy-Item -Force $pgRuntimeDll.FullName (Join-Path $vPgLib "libpq.dll")
           }
-          Copy-Item -Force $cryptoImportLib.FullName (Join-Path $opensslLibDir "crypto.lib")
-          Copy-Item -Force $cryptoImportLib.FullName (Join-Path $opensslLibDir "libcrypto.lib")
-          Copy-Item -Force $sslImportLib.FullName (Join-Path $opensslLibDir "ssl.lib")
-          Copy-Item -Force $sslImportLib.FullName (Join-Path $opensslLibDir "libssl.lib")
+          foreach ($alias in @("crypto.lib", "libcrypto.lib")) {
+            $aliasPath = Join-Path $opensslLibDir $alias
+            if ($cryptoImportLib.FullName -ne $aliasPath) {
+              Copy-Item -Force $cryptoImportLib.FullName $aliasPath
+            }
+          }
+          foreach ($alias in @("ssl.lib", "libssl.lib")) {
+            $aliasPath = Join-Path $opensslLibDir $alias
+            if ($sslImportLib.FullName -ne $aliasPath) {
+              Copy-Item -Force $sslImportLib.FullName $aliasPath
+            }
+          }
           Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "MYSQL_ROOT=$sdkRoot"
           Add-Content -Path $env:GITHUB_ENV -Value "POSTGRES_ROOT=$sdkRoot"
