@@ -547,11 +547,12 @@ jobs:
         working-directory: source
         shell: pwsh
         run: |
-          $doctorArgs = @("-SidecarPath", "backend\bin\vtable-sidecar.exe")
+          $doctorScript = "desktop\scripts\doctor-runtime-libs.ps1"
+          $doctorArgs = @()
           if ($env:VTABLE_WINDOWS_SIDECAR_V_FLAGS -match "-cc\s+gcc") {
             $doctorArgs += "-RequireMinGWRuntime"
           }
-          desktop\scripts\doctor-runtime-libs.ps1 @doctorArgs
+          & $doctorScript -SidecarPath "backend\bin\vtable-sidecar.exe" @doctorArgs
 
       - name: Prepare Windows Tauri icon
         working-directory: source
