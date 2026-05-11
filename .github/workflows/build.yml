@@ -55,10 +55,9 @@ env:
   QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
-  QUICKJS_REPO: ${{ vars.QUICKJS_REPO || 'https://github.com/bellard/quickjs.git' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs -d quickjs_ng' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs' }}
 
 jobs:
   macos:
@@ -98,10 +97,11 @@ jobs:
           set -eu
           git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
 
-      - name: Clone QuickJS
+      - name: Ensure vjsx managed QuickJS source
         run: |
           set -eu
-          git clone --depth 1 "${QUICKJS_REPO}" "${QUICKJS_DIR}"
+          quickjs_path="$(QUICKJS_DIR="${GITHUB_WORKSPACE}/${QUICKJS_DIR}" "${GITHUB_WORKSPACE}/${VJSX_DIR}/scripts/ensure-quickjs.sh")"
+          echo "VJS_QUICKJS_PATH=${quickjs_path}" >> "${GITHUB_ENV}"
 
       - name: Install system dependencies
         run: |
@@ -183,7 +183,6 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
-          VJS_QUICKJS_PATH: ${{ github.workspace }}/${{ env.QUICKJS_DIR }}
         run: |
           set -eu
           npm --prefix desktop run check
@@ -195,7 +194,6 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
-          VJS_QUICKJS_PATH: ${{ github.workspace }}/${{ env.QUICKJS_DIR }}
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -298,11 +296,16 @@ jobs:
         shell: pwsh
         run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
 
-      - name: Clone QuickJS
-        shell: pwsh
-        env:
-          QUICKJS_WINDOWS_REPO: ${{ vars.QUICKJS_WINDOWS_REPO || 'https://github.com/quickjs-ng/quickjs.git' }}
-        run: git clone --depth 1 "$env:QUICKJS_WINDOWS_REPO" "$env:QUICKJS_DIR"
+      - name: Ensure vjsx managed QuickJS source
+        shell: bash
+        run: |
+          set -euo pipefail
+          quickjs_dir="$(pwd)/${QUICKJS_DIR}"
+          quickjs_path="$(QUICKJS_DIR="${quickjs_dir}" "./${VJSX_DIR}/scripts/ensure-quickjs.sh")"
+          if command -v cygpath >/dev/null 2>&1; then
+            quickjs_path="$(cygpath -w "$quickjs_path")"
+          fi
+          echo "VJS_QUICKJS_PATH=${quickjs_path}" >> "${GITHUB_ENV}"
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -473,7 +476,6 @@ jobs:
         shell: pwsh
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
-          VJS_QUICKJS_PATH: ${{ github.workspace }}\${{ env.QUICKJS_DIR }}
           VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -606,12 +608,11 @@ jobs:
         shell: pwsh
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
-          VJS_QUICKJS_PATH: ${{ github.workspace }}\${{ env.QUICKJS_DIR }}
           VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
         run: |
           npm --prefix desktop run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":["../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
+          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":["../../backend/bin/vtable-sidecar*.exe","../../backend/bin/*.dll","../../backend/bin/runtime"]}}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect Windows artifacts
