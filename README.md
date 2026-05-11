@@ -54,7 +54,13 @@ Open **Actions -> Build AIData Studio -> Run workflow**, then choose:
 - `VJSX_REPO`: vjsx repository URL. Defaults to
   `https://github.com/guweigang/vjsx.git`.
 - `VTABLE_SIDECAR_V_FLAGS`: V compile flags. Defaults to
-  `-d vjsx_mysql -d use_openssl`.
+  `-cc clang -show-c-output -d build_quickjs -d use_openssl`.
+- `VTABLE_WINDOWS_SIDECAR_V_FLAGS`: Windows sidecar V compile flags. Defaults
+  to `-cc msvc -show-c-output -d build_quickjs`.
+
+QuickJS source preparation is delegated to `vjsx/scripts/ensure-quickjs.sh`.
+The workflow exports `VJS_QUICKJS_PATH` for the vtable sidecar build, so this
+CI project does not need to know which QuickJS implementation vjsx manages.
 
 ## Repository Secrets
 
