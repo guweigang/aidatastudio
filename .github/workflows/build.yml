@@ -616,6 +616,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect Windows artifacts
+        id: windows_meta
         shell: pwsh
         run: |
           $dist = Join-Path $env:GITHUB_WORKSPACE "dist\windows"
@@ -629,14 +630,26 @@ jobs:
           } | ForEach-Object {
             Copy-Item -Force $_.FullName (Join-Path $dist $_.Name)
           }
+          $tauriConfig = Get-Content -Raw -Path "source\desktop\src-tauri\tauri.conf.json" | ConvertFrom-Json
+          $version = $tauriConfig.version
+          $artifact = Get-ChildItem -Path $dist -File | Where-Object {
+            $_.Extension -in @(".msi", ".exe", ".zip")
+          } | Sort-Object Name | Select-Object -First 1
+          if ($null -eq $artifact) {
+            throw "Windows package artifact not found under $dist"
+          }
           $metadata = [ordered]@{
             source_ref = "${{ inputs.source_ref }}"
             platform = "windows"
             arch = "x64"
             target = "x86_64-pc-windows-msvc"
+            version = $version
+            artifact = $artifact.Name
             created_at = (Get-Date).ToUniversalTime().ToString("o")
           }
           $metadata | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $dist "release.json")
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
           Get-ChildItem -Path $dist -File | Sort-Object Name | ForEach-Object { Write-Host $_.FullName }
 
       - name: Upload Windows workflow artifacts
@@ -646,3 +659,13 @@ jobs:
           path: dist/windows/*
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release
+        if: inputs.publish_github_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.windows_meta.outputs.tag }}
+          name: AIData Studio ${{ steps.windows_meta.outputs.version }}
+          files: |
+            dist/windows/*
+          fail_on_unmatched_files: true
