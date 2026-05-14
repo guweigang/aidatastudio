@@ -623,23 +623,35 @@ jobs:
             Remove-Item -Force $dbPath
           }
           Invoke-SidecarText -ExePath $sidecar -Arguments @("init-sqlite", "--db", $dbPath) | Out-Null
-          $lastResults = '{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0}'
-          $schema = '{"active_table":"","tables":{},"selected_row":{}}'
-          $raw = Invoke-SidecarText -ExePath $sidecar -Arguments @(
-            "run-notebook-cell",
-            "--engine", "SQLITE",
-            "--db", $dbPath,
-            "--language", "javascript",
-            "--cell-id", "smoke",
-            "--result-var-name", "result",
-            "--code", "1 + 1",
-            "--history-json", "[]",
-            "--last-results-json", $lastResults,
-            "--schema-json", $schema
-          )
-          $result = $raw | ConvertFrom-Json
+          $requests = @(
+            '{"op":"inspect_state"}',
+            '{"op":"run_cell","cellId":"smoke","resultVarName":"result","language":"javascript","code":"1 + 1","last_results":{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0},"schema":{"active_table":"","tables":{},"selected_row":{}}}',
+            '{"op":"shutdown"}'
+          ) -join [Environment]::NewLine
+          $responses = $requests | & $sidecar notebook-kernel-daemon --engine SQLITE --db $dbPath 2>&1
+          $exitCode = $LASTEXITCODE
+          $text = ($responses | Out-String).Trim()
+          if ($text) {
+            Write-Host $text
+          }
+          if ($exitCode -ne 0) {
+            throw "notebook daemon smoke failed with exit code $($exitCode): $text"
+          }
+          $lines = @($text -split "`r?`n" | Where-Object { $_.Trim() })
+          if ($lines.Count -lt 3) {
+            throw "notebook daemon smoke returned too few responses: $text"
+          }
+          $inspect = $lines[0] | ConvertFrom-Json
+          $result = $lines[1] | ConvertFrom-Json
+          $shutdown = $lines[2] | ConvertFrom-Json
+          if ($inspect.ok -ne $true) {
+            throw "notebook inspect failed: $($lines[0])"
+          }
           if ($result.ok -ne $true -or $result.kind -eq "error" -or $result.text -ne "2") {
-            throw "notebook smoke failed: $raw"
+            throw "notebook run failed: $($lines[1])"
+          }
+          if ($shutdown.ok -ne $true) {
+            throw "notebook shutdown failed: $($lines[2])"
           }
 
       - name: Prepare Windows Tauri icon
