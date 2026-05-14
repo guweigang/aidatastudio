@@ -586,21 +586,57 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $sidecarDir = Resolve-Path "backend\bin"
+          function Invoke-SidecarText {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$ExePath,
+
+              [AllowEmptyCollection()]
+              [string[]]$Arguments = @()
+            )
+
+            Write-Host "sidecar> $ExePath $($Arguments -join ' ')"
+            $output = & $ExePath @Arguments 2>&1
+            $exitCode = $LASTEXITCODE
+            $text = ($output | Out-String).Trim()
+            if ($text) {
+              Write-Host $text
+            }
+            if ($exitCode -ne 0) {
+              throw "sidecar command failed with exit code $($exitCode): $text"
+            }
+            return $text
+          }
+
+          $sidecarDir = (Resolve-Path "backend\bin").Path
           $sidecar = Join-Path $sidecarDir "vtable-sidecar.exe"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
-          $env:PATH = "$sidecarDir;$runtimeDir;$env:PATH"
+          $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
+          $env:PATH = @(
+            $sidecarDir,
+            $runtimeDir,
+            (Join-Path $systemRoot "System32"),
+            $systemRoot
+          ) -join [System.IO.Path]::PathSeparator
           $dbPath = Join-Path $env:RUNNER_TEMP "aidatastudio-notebook-smoke.sqlite"
           if (Test-Path $dbPath) {
             Remove-Item -Force $dbPath
           }
-          & $sidecar init-sqlite --db $dbPath | Out-Null
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Invoke-SidecarText -ExePath $sidecar -Arguments @("init-sqlite", "--db", $dbPath) | Out-Null
           $lastResults = '{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0}'
           $schema = '{"active_table":"","tables":{},"selected_row":{}}'
-          $raw = & $sidecar run-notebook-cell --engine SQLITE --db $dbPath --language javascript --cell-id smoke --result-var-name result --code "1 + 1" --history-json "[]" --last-results-json $lastResults --schema-json $schema
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host $raw
+          $raw = Invoke-SidecarText -ExePath $sidecar -Arguments @(
+            "run-notebook-cell",
+            "--engine", "SQLITE",
+            "--db", $dbPath,
+            "--language", "javascript",
+            "--cell-id", "smoke",
+            "--result-var-name", "result",
+            "--code", "1 + 1",
+            "--history-json", "[]",
+            "--last-results-json", $lastResults,
+            "--schema-json", $schema
+          )
           $result = $raw | ConvertFrom-Json
           if ($result.ok -ne $true -or $result.kind -eq "error" -or $result.text -ne "2") {
             throw "notebook smoke failed: $raw"
