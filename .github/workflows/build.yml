@@ -581,6 +581,31 @@ jobs:
           }
           & $doctorScript -SidecarPath "backend\bin\vtable-sidecar.exe" @doctorArgs
 
+      - name: Smoke Windows notebook runtime
+        working-directory: source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sidecarDir = Resolve-Path "backend\bin"
+          $sidecar = Join-Path $sidecarDir "vtable-sidecar.exe"
+          $runtimeDir = Join-Path $sidecarDir "runtime\libs"
+          $env:PATH = "$sidecarDir;$runtimeDir;$env:PATH"
+          $dbPath = Join-Path $env:RUNNER_TEMP "aidatastudio-notebook-smoke.sqlite"
+          if (Test-Path $dbPath) {
+            Remove-Item -Force $dbPath
+          }
+          & $sidecar init-sqlite --db $dbPath | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $lastResults = '{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0}'
+          $schema = '{"active_table":"","tables":{},"selected_row":{}}'
+          $raw = & $sidecar run-notebook-cell --engine SQLITE --db $dbPath --language javascript --cell-id smoke --result-var-name result --code "1 + 1" --history-json "[]" --last-results-json $lastResults --schema-json $schema
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host $raw
+          $result = $raw | ConvertFrom-Json
+          if ($result.ok -ne $true -or $result.kind -eq "error" -or $result.text -ne "2") {
+            throw "notebook smoke failed: $raw"
+          }
+
       - name: Prepare Windows Tauri icon
         working-directory: source
         shell: pwsh
