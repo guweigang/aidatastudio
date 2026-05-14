@@ -532,7 +532,9 @@ jobs:
         run: |
           $sidecarDir = Resolve-Path "backend\bin"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
+          $assetDir = Join-Path $sidecarDir "runtime\assets"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
           function Copy-DependencyDll([System.IO.FileInfo]$dll) {
             $sidecarTarget = Join-Path $sidecarDir $dll.Name
             $runtimeTarget = Join-Path $runtimeDir $dll.Name
@@ -554,7 +556,17 @@ jobs:
                 Copy-DependencyDll $_
               }
           }
+          $typescriptSource = Join-Path $env:GITHUB_WORKSPACE "$env:VJSX_DIR\thirdparty\typescript\lib"
+          $typescriptTarget = Join-Path $assetDir "thirdparty\typescript\lib"
+          if (!(Test-Path (Join-Path $typescriptSource "typescript.js"))) {
+            throw "vjsx TypeScript runtime asset not found under $typescriptSource"
+          }
+          New-Item -ItemType Directory -Force -Path $typescriptTarget | Out-Null
+          Copy-Item -Force (Join-Path $typescriptSource "*.js") $typescriptTarget
           Get-ChildItem -Path $sidecarDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged $($_.Name)" }
+          Get-ChildItem -Path $assetDir -File -Recurse | Sort-Object FullName | ForEach-Object {
+            Write-Host "staged asset $($_.FullName.Substring($assetDir.Length + 1))"
+          }
 
       - name: Inspect Windows sidecar dependencies
         working-directory: source
