@@ -57,7 +57,7 @@ env:
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-cc clang -show-c-output -d build_quickjs -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d build_quickjs' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d link_quickjs' }}
 
 jobs:
   macos:
@@ -311,6 +311,34 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
+
+      - name: Build QuickJS NG on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $quickjsSource = Join-Path $env:GITHUB_WORKSPACE $env:QUICKJS_DIR
+          $quickjsBuild = Join-Path $env:RUNNER_TEMP "quickjs-ng-build"
+          if (Test-Path $quickjsBuild) {
+            Remove-Item -Recurse -Force $quickjsBuild
+          }
+          cmake -S $quickjsSource -B $quickjsBuild -G "Visual Studio 17 2022" -A x64 -DQJS_BUILD_LIBC=ON -DBUILD_SHARED_LIBS=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build $quickjsBuild --config Release --target qjs_exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $qjsLib = Get-ChildItem -Path $quickjsBuild -Filter qjs.lib -File -Recurse |
+            Where-Object { $_.FullName -match "\\Release\\" } |
+            Select-Object -First 1
+          $qjsExe = Get-ChildItem -Path $quickjsBuild -Filter qjs.exe -File -Recurse |
+            Where-Object { $_.FullName -match "\\Release\\" } |
+            Select-Object -First 1
+          if ($null -eq $qjsLib) { throw "qjs.lib not found under $quickjsBuild" }
+          if ($null -eq $qjsExe) { throw "qjs.exe not found under $quickjsBuild" }
+          $smokeOutput = (& $qjsExe.FullName -e "print(1 + 1)" | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($smokeOutput -ne "2") { throw "quickjs-ng smoke expected 2, got: $smokeOutput" }
+          Add-Content -Path $env:GITHUB_ENV -Value "VJS_QUICKJS_LIB_PATH=$($qjsLib.FullName)"
+          Write-Host "VJS_QUICKJS_LIB_PATH=$($qjsLib.FullName)"
+          Write-Host "quickjs-ng smoke: $smokeOutput"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
