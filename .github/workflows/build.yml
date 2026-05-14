@@ -623,6 +623,7 @@ jobs:
           $sidecarDir = (Resolve-Path "backend\bin").Path
           $sidecar = Join-Path $sidecarDir "vtable-sidecar.exe"
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
+          $assetDir = Join-Path $sidecarDir "runtime\assets"
           $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
           $env:PATH = @(
             $sidecarDir,
@@ -630,6 +631,9 @@ jobs:
             (Join-Path $systemRoot "System32"),
             $systemRoot
           ) -join [System.IO.Path]::PathSeparator
+          $env:VJSX_ASSET_ROOT = $assetDir
+          $env:VTABLE_NOTEBOOK_DEBUG = "1"
+          Write-Host "VJSX_ASSET_ROOT=$env:VJSX_ASSET_ROOT"
           $dbPath = Join-Path $env:RUNNER_TEMP "aidatastudio-notebook-smoke.sqlite"
           if (Test-Path $dbPath) {
             Remove-Item -Force $dbPath
@@ -649,7 +653,10 @@ jobs:
           if ($exitCode -ne 0) {
             throw "notebook daemon smoke failed with exit code $($exitCode): $text"
           }
-          $lines = @($text -split "`r?`n" | Where-Object { $_.Trim() })
+          $lines = @($text -split "`r?`n" | Where-Object {
+            $line = $_.Trim()
+            $line -and !$line.StartsWith("[notebook]")
+          })
           if ($lines.Count -lt 3) {
             throw "notebook daemon smoke returned too few responses: $text"
           }
