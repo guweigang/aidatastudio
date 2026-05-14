@@ -359,6 +359,12 @@ jobs:
             Remove-Item -Recurse -Force $installRoot
           }
           git clone --depth 1 https://github.com/vlang/v.git $installRoot
+          $makev = Join-Path $installRoot "makev.bat"
+          $makevContent = Get-Content -Raw $makev
+          if ($makevContent -notmatch "-lbcrypt") {
+            $makevContent = $makevContent -replace "-ladvapi32 -lws2_32", "-ladvapi32 -lbcrypt -lws2_32"
+            Set-Content -NoNewline -Path $makev -Value $makevContent
+          }
           Push-Location $installRoot
           cmd /c makev.bat -msvc
           $vBuildExitCode = $LASTEXITCODE
