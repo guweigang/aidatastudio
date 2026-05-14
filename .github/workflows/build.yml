@@ -592,12 +592,12 @@ jobs:
         working-directory: source
         shell: pwsh
         run: |
-          $doctorScript = "desktop\scripts\doctor-runtime-libs.ps1"
+          $doctorScript = Resolve-Path ".\desktop\scripts\doctor-runtime-libs.ps1"
           $doctorArgs = @()
           if ($env:VTABLE_WINDOWS_SIDECAR_V_FLAGS -match "-cc\s+gcc") {
             $doctorArgs += "-RequireMinGWRuntime"
           }
-          & $doctorScript -SidecarPath "backend\bin\vtable-sidecar.exe" @doctorArgs
+          & $doctorScript.Path -SidecarPath "backend\bin\vtable-sidecar.exe" @doctorArgs
 
       - name: Smoke Windows notebook runtime
         working-directory: source
