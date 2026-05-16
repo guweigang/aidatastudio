@@ -54,16 +54,28 @@ function Invoke-SidecarJson {
     [string]$PathValue
   )
 
-  $oldPath = $env:PATH
-  try {
-    $env:PATH = $PathValue
-    $output = & $ExePath @Arguments 2>&1
-    $exitCode = $LASTEXITCODE
-  } finally {
-    $env:PATH = $oldPath
+  $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $processInfo.FileName = $ExePath
+  foreach ($argument in $Arguments) {
+    [void]$processInfo.ArgumentList.Add($argument)
   }
+  $processInfo.UseShellExecute = $false
+  $processInfo.CreateNoWindow = $true
+  $processInfo.RedirectStandardOutput = $true
+  $processInfo.RedirectStandardError = $true
+  $processInfo.Environment["PATH"] = $PathValue
 
-  $text = ($output | Out-String).Trim()
+  $process = [System.Diagnostics.Process]::new()
+  $process.StartInfo = $processInfo
+  if (!$process.Start()) {
+    throw "failed to start sidecar command"
+  }
+  $stdout = $process.StandardOutput.ReadToEnd()
+  $stderr = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+  $exitCode = $process.ExitCode
+
+  $text = ($stdout + $stderr).Trim()
   if ($exitCode -ne 0) {
     throw "sidecar command failed with exit code $($exitCode): $text"
   }

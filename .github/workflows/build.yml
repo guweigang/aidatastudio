@@ -652,13 +652,38 @@ jobs:
               [string]$ExePath,
 
               [AllowEmptyCollection()]
-              [string[]]$Arguments = @()
+              [string[]]$Arguments = @(),
+
+              [string]$InputText = $null
             )
 
             Write-Host "sidecar> $ExePath $($Arguments -join ' ')"
-            $output = & $ExePath @Arguments 2>&1
-            $exitCode = $LASTEXITCODE
-            $text = ($output | Out-String).Trim()
+            $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $processInfo.FileName = $ExePath
+            foreach ($argument in $Arguments) {
+              [void]$processInfo.ArgumentList.Add($argument)
+            }
+            $processInfo.UseShellExecute = $false
+            $processInfo.CreateNoWindow = $true
+            $processInfo.RedirectStandardOutput = $true
+            $processInfo.RedirectStandardError = $true
+            if ($null -ne $InputText) {
+              $processInfo.RedirectStandardInput = $true
+            }
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $processInfo
+            if (!$process.Start()) {
+              throw "failed to start sidecar command"
+            }
+            if ($null -ne $InputText) {
+              $process.StandardInput.Write($InputText)
+              $process.StandardInput.Close()
+            }
+            $stdout = $process.StandardOutput.ReadToEnd()
+            $stderr = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+            $exitCode = $process.ExitCode
+            $text = ($stdout + $stderr).Trim()
             if ($text) {
               Write-Host $text
             }
@@ -692,15 +717,7 @@ jobs:
             '{"op":"run_cell","cellId":"smoke","resultVarName":"result","language":"javascript","code":"1 + 1","last_results":{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0},"schema":{"active_table":"","tables":{},"selected_row":{}}}',
             '{"op":"shutdown"}'
           ) -join [Environment]::NewLine
-          $responses = $requests | & $sidecar notebook-kernel-daemon --engine SQLITE --db $dbPath 2>&1
-          $exitCode = $LASTEXITCODE
-          $text = ($responses | Out-String).Trim()
-          if ($text) {
-            Write-Host $text
-          }
-          if ($exitCode -ne 0) {
-            throw "notebook daemon smoke failed with exit code $($exitCode): $text"
-          }
+          $text = Invoke-SidecarText -ExePath $sidecar -Arguments @("notebook-kernel-daemon", "--engine", "SQLITE", "--db", $dbPath) -InputText $requests
           $lines = @($text -split "`r?`n" | Where-Object {
             $line = $_.Trim()
             $line -and !$line.StartsWith("[notebook]")
