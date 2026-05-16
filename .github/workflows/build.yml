@@ -58,7 +58,7 @@ env:
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-show-c-output -d build_quickjs -d use_openssl' }}
-  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -subsystem windows -show-c-output -d link_quickjs' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d link_quickjs' }}
 
 jobs:
   macos:
