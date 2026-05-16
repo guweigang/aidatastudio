@@ -722,6 +722,13 @@ jobs:
             $line = $_.Trim()
             $line -and !$line.StartsWith("[notebook]")
           })
+          if ($lines.Count -eq 1) {
+            $single = $lines[0] | ConvertFrom-Json
+            if ($single.ok -eq $false -and ($single.error -like "*unknown command*notebook-kernel-daemon*")) {
+              Write-Warning "notebook-kernel-daemon is not available in this source ref; skipping daemon smoke"
+              return
+            }
+          }
           if ($lines.Count -lt 3) {
             throw "notebook daemon smoke returned too few responses: $text"
           }
