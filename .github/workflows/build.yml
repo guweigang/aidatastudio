@@ -598,6 +598,8 @@ jobs:
           }
 
           $pluginRoots = @(
+            (Join-Path $env:VCPKG_INSTALLED_DIR "plugins\libmariadb"),
+            (Join-Path $env:VCPKG_INSTALLED_DIR "plugins"),
             (Join-Path $env:VCPKG_INSTALLED_DIR "lib\mariadb\plugin"),
             (Join-Path $env:VCPKG_INSTALLED_DIR "lib\plugin"),
             (Join-Path $env:VCPKG_INSTALLED_DIR "plugin")
