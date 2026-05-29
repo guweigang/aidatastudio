@@ -94,12 +94,15 @@ if (!(Test-Path $sidecar)) {
 
 $sidecarDir = Split-Path -Parent $sidecar
 $runtimeDir = Join-Path $sidecarDir "runtime\libs"
-$runtimeSearchDirs = @($sidecarDir, $runtimeDir)
+$runtimePluginDir = Join-Path $sidecarDir "runtime\plugins"
+$runtimeMariaDbPluginDir = Join-Path $runtimeDir "mariadb\plugin"
+$runtimeSearchDirs = @($sidecarDir, $runtimeDir, $runtimePluginDir, $runtimeMariaDbPluginDir)
 
 Write-Host "doctor: $sidecar"
 Assert-AnyFile -Directories $runtimeSearchDirs -Patterns @("libssl-*.dll") -Label "OpenSSL ssl"
 Assert-AnyFile -Directories $runtimeSearchDirs -Patterns @("libcrypto-*.dll") -Label "OpenSSL crypto"
 Assert-AnyFile -Directories $runtimeSearchDirs -Patterns @("libmariadb.dll", "libmysql.dll") -Label "MySQL/MariaDB client"
+Assert-AnyFile -Directories $runtimeSearchDirs -Patterns @("caching_sha2_password.dll") -Label "MySQL caching_sha2 auth plugin"
 Assert-AnyFile -Directories $runtimeSearchDirs -Patterns @("libpq.dll") -Label "PostgreSQL client"
 
 if ($RequireMinGWRuntime) {
@@ -116,6 +119,8 @@ if (!$systemRoot) {
 $packageOnlyPath = @(
   $sidecarDir,
   $runtimeDir,
+  $runtimePluginDir,
+  $runtimeMariaDbPluginDir,
   (Join-Path $systemRoot "System32"),
   $systemRoot
 ) -join [System.IO.Path]::PathSeparator
