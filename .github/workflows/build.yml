@@ -183,6 +183,40 @@ jobs:
           echo "${RUNNER_TEMP}/tauri-cli-bin" >> "${GITHUB_PATH}"
           PATH="${RUNNER_TEMP}/tauri-cli-bin:${PATH}" cargo tauri --version
 
+      - name: Configure Tauri updater
+        if: inputs.publish_github_release
+        env:
+          TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_PUBLIC_KEY_SECRET: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://github.com/guweigang/aidatastudio/releases/latest/download/latest.json' }}
+        run: |
+          set -eu
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is required to publish updater artifacts" >&2
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const pubkey = process.env.TAURI_UPDATER_PUBLIC_KEY_SECRET || process.env.TAURI_UPDATER_PUBLIC_KEY_VAR;
+            if (!pubkey) {
+              console.error("TAURI_UPDATER_PUBLIC_KEY repository variable or secret is required");
+              process.exit(1);
+            }
+            const config = {
+              bundle: { createUpdaterArtifacts: true },
+              plugins: {
+                updater: {
+                  pubkey,
+                  endpoints: [process.env.TAURI_UPDATER_ENDPOINT],
+                  windows: { installMode: "passive" }
+                }
+              }
+            };
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/tauri-updater.conf.json`, JSON.stringify(config, null, 2));
+          '
+          echo "TAURI_BUILD_CONFIG=${RUNNER_TEMP}/tauri-updater.conf.json" >> "${GITHUB_ENV}"
+
       - name: Check desktop and Tauri build inputs
         working-directory: source
         env:
@@ -211,6 +245,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
           APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -eu
           case "${{ inputs.release_mode }}:${{ matrix.target_mode }}" in
@@ -261,6 +297,8 @@ jobs:
           body_path: dist/macos/RELEASE_NOTES.md
           files: |
             dist/macos/${{ steps.release_meta.outputs.artifact }}
+            dist/macos/*.app.tar.gz
+            dist/macos/*.app.tar.gz.sig
             dist/macos/sha256sums.txt
             dist/macos/release.json
           fail_on_unmatched_files: true
@@ -566,6 +604,37 @@ jobs:
             cargo install tauri-cli --version "^2" --locked
           }
 
+      - name: Configure Tauri updater
+        if: inputs.publish_github_release
+        shell: pwsh
+        env:
+          TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_PUBLIC_KEY_SECRET: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://github.com/guweigang/aidatastudio/releases/latest/download/latest.json' }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (!$env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw "TAURI_SIGNING_PRIVATE_KEY secret is required to publish updater artifacts"
+          }
+          $pubkey = if ($env:TAURI_UPDATER_PUBLIC_KEY_SECRET) { $env:TAURI_UPDATER_PUBLIC_KEY_SECRET } else { $env:TAURI_UPDATER_PUBLIC_KEY_VAR }
+          if (!$pubkey) {
+            throw "TAURI_UPDATER_PUBLIC_KEY repository variable or secret is required"
+          }
+          $config = [ordered]@{
+            bundle = [ordered]@{ createUpdaterArtifacts = $true }
+            plugins = [ordered]@{
+              updater = [ordered]@{
+                pubkey = $pubkey
+                endpoints = @($env:TAURI_UPDATER_ENDPOINT)
+                windows = [ordered]@{ installMode = "passive" }
+              }
+            }
+          }
+          $configPath = Join-Path $env:RUNNER_TEMP "tauri-updater.conf.json"
+          $config | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path $configPath
+          Add-Content -Path $env:GITHUB_ENV -Value "TAURI_BUILD_CONFIG=$configPath"
+
       - name: Stage sidecar runtime DLLs
         working-directory: source
         shell: pwsh
@@ -799,10 +868,17 @@ jobs:
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
           VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           npm --prefix desktop run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo tauri build --target x86_64-pc-windows-msvc --no-sign --config '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":{"../../backend/bin/vtable-sidecar*.exe":"backend/bin/","../../backend/bin/*.dll":"backend/bin/","../../backend/bin/runtime":"backend/bin/runtime"}}}'
+          $inlineConfig = '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":{"../../backend/bin/vtable-sidecar*.exe":"backend/bin/","../../backend/bin/*.dll":"backend/bin/","../../backend/bin/runtime":"backend/bin/runtime"}}}'
+          $buildArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc", "--no-sign", "--config", $inlineConfig)
+          if ($env:TAURI_BUILD_CONFIG) {
+            $buildArgs += @("--config", $env:TAURI_BUILD_CONFIG)
+          }
+          cargo @buildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect Windows artifacts
@@ -816,7 +892,7 @@ jobs:
             throw "Windows bundle output not found: $bundleRoot"
           }
           Get-ChildItem -Path $bundleRoot -File -Recurse | Where-Object {
-            $_.Extension -in @(".msi", ".exe", ".zip")
+            $_.Extension -in @(".msi", ".exe", ".zip", ".sig")
           } | ForEach-Object {
             Copy-Item -Force $_.FullName (Join-Path $dist $_.Name)
           }
@@ -858,4 +934,39 @@ jobs:
           name: AIData Studio ${{ steps.windows_meta.outputs.version }}
           files: |
             dist/windows/*
+          fail_on_unmatched_files: true
+
+  update-manifest:
+    name: Publish updater manifest
+    if: always() && inputs.publish_github_release
+    needs:
+      - macos
+      - windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Generate latest.json
+        id: latest
+        run: |
+          set -eu
+          version="$(node desktop/scripts/generate-tauri-latest-json.mjs dist-artifacts)"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+          cat latest.json
+
+      - name: Publish latest.json
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.latest.outputs.tag }}
+          name: AIData Studio ${{ steps.latest.outputs.version }}
+          files: latest.json
           fail_on_unmatched_files: true
