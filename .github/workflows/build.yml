@@ -879,7 +879,10 @@ jobs:
           npm --prefix desktop run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $inlineConfig = '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":{"../../backend/bin/vtable-sidecar*.exe":"backend/bin/","../../backend/bin/*.dll":"backend/bin/","../../backend/bin/runtime":"backend/bin/runtime"}}}'
-          $buildArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc", "--no-sign", "--config", $inlineConfig)
+          $buildArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc", "--config", $inlineConfig)
+          if (!$env:TAURI_BUILD_CONFIG) {
+            $buildArgs += "--no-sign"
+          }
           if ($env:TAURI_BUILD_CONFIG) {
             $buildArgs += @("--config", $env:TAURI_BUILD_CONFIG)
           }
@@ -909,6 +912,16 @@ jobs:
           if ($null -eq $artifact) {
             throw "Windows package artifact not found under $dist"
           }
+          $updaterArtifact = Get-ChildItem -Path $dist -File | Where-Object {
+            $_.Extension -in @(".zip", ".exe", ".msi") -and (Test-Path "$($_.FullName).sig")
+          } | Sort-Object @{ Expression = {
+            if ($_.Extension -eq ".zip") { 0 } elseif ($_.Extension -eq ".exe") { 1 } else { 2 }
+          }}, Name | Select-Object -First 1
+          if ($env:TAURI_BUILD_CONFIG -and $null -eq $updaterArtifact) {
+            Write-Host "Windows dist contents:"
+            Get-ChildItem -Path $dist -File | Sort-Object Name | ForEach-Object { Write-Host $_.FullName }
+            throw "Windows updater artifact/signature not found under $dist"
+          }
           $metadata = [ordered]@{
             source_ref = "${{ inputs.source_ref }}"
             platform = "windows"
@@ -917,6 +930,10 @@ jobs:
             version = $version
             artifact = $artifact.Name
             created_at = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          if ($null -ne $updaterArtifact) {
+            $metadata.updaterArtifact = $updaterArtifact.Name
+            $metadata.updaterSignature = "$($updaterArtifact.Name).sig"
           }
           $metadata | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $dist "release.json")
           "version=$version" >> $env:GITHUB_OUTPUT
