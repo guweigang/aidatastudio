@@ -899,10 +899,13 @@ jobs:
           if (!(Test-Path $bundleRoot)) {
             throw "Windows bundle output not found: $bundleRoot"
           }
+          function Get-ReleaseAssetName([string]$Name) {
+            return $Name -replace '\s+', '.'
+          }
           Get-ChildItem -Path $bundleRoot -File -Recurse | Where-Object {
             $_.Extension -in @(".msi", ".exe", ".zip", ".sig")
           } | ForEach-Object {
-            Copy-Item -Force $_.FullName (Join-Path $dist $_.Name)
+            Copy-Item -Force $_.FullName (Join-Path $dist (Get-ReleaseAssetName $_.Name))
           }
           $tauriConfig = Get-Content -Raw -Path "source\desktop\src-tauri\tauri.conf.json" | ConvertFrom-Json
           $version = $tauriConfig.version
