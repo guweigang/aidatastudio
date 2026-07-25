@@ -69,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.target_mode == 'both' && '[{"target_mode":"apple-silicon","runner":"macos-14"},{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'intel' && '[{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'universal' && '[{"target_mode":"universal","runner":"macos-14"}]' || inputs.target_mode == 'host' && '[{"target_mode":"host","runner":"macos-14"}]' || '[{"target_mode":"apple-silicon","runner":"macos-14"}]') }}
+        include: ${{ fromJSON(inputs.target_mode == 'both' && '[{"target_mode":"apple-silicon","runner":"macos-15"},{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'intel' && '[{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'universal' && '[{"target_mode":"universal","runner":"macos-15"}]' || inputs.target_mode == 'host' && '[{"target_mode":"host","runner":"macos-15"}]' || '[{"target_mode":"apple-silicon","runner":"macos-15"}]') }}
 
     steps:
       - name: Checkout CI repository
