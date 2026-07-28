@@ -633,6 +633,25 @@ jobs:
           $config | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path $configPath
           Add-Content -Path $env:GITHUB_ENV -Value "TAURI_BUILD_CONFIG=$configPath"
 
+      - name: Build vjsx runtime binary
+        working-directory: source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runtimeBinDir = "backend\bin\runtime\bin"
+          New-Item -ItemType Directory -Force -Path $runtimeBinDir | Out-Null
+          $vjsxOut = Join-Path $runtimeBinDir "vjsx.exe"
+          $vjsxBuildScript = Join-Path $env:GITHUB_WORKSPACE "$env:VJSX_DIR\scripts\build-vjsx.ps1"
+          if (!(Test-Path $vjsxBuildScript)) {
+            throw "vjsx build script not found at $vjsxBuildScript"
+          }
+          & $vjsxBuildScript -Out $vjsxOut -QuickjsPath $env:VJS_QUICKJS_PATH -QuickjsLibPath $env:VJS_QUICKJS_LIB_PATH
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path $vjsxOut)) {
+            throw "vjsx runtime binary was not produced at $vjsxOut"
+          }
+          Write-Host "prepared $((Resolve-Path $vjsxOut).Path)"
+
       - name: Stage sidecar runtime DLLs
         working-directory: source
         shell: pwsh
@@ -704,6 +723,7 @@ jobs:
           Get-ChildItem -Path $assetDir -File -Recurse | Sort-Object FullName | ForEach-Object {
             Write-Host "staged asset $($_.FullName.Substring($assetDir.Length + 1))"
           }
+          Get-ChildItem -Path (Join-Path $sidecarDir "runtime\bin") -File | Sort-Object Name | ForEach-Object { Write-Host "staged runtime bin $($_.Name)" }
           Get-ChildItem -Path $pluginDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged plugin $($_.Name)" }
 
       - name: Inspect Windows sidecar dependencies
@@ -796,17 +816,24 @@ jobs:
           $runtimeDir = Join-Path $sidecarDir "runtime\libs"
           $pluginDir = Join-Path $sidecarDir "runtime\plugins"
           $assetDir = Join-Path $sidecarDir "runtime\assets"
+          $runtimeBinDir = Join-Path $sidecarDir "runtime\bin"
           $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
           $env:PATH = @(
             $sidecarDir,
             $runtimeDir,
             $pluginDir,
+            $runtimeBinDir,
             (Join-Path $systemRoot "System32"),
             $systemRoot
           ) -join [System.IO.Path]::PathSeparator
           $env:VJSX_ASSET_ROOT = $assetDir
           $env:VTABLE_NOTEBOOK_DEBUG = "1"
           Write-Host "VJSX_ASSET_ROOT=$env:VJSX_ASSET_ROOT"
+          $vjsxBin = Join-Path $runtimeBinDir "vjsx.exe"
+          if (!(Test-Path $vjsxBin)) {
+            throw "vjsx runtime binary not found at $vjsxBin"
+          }
+          Invoke-SidecarText -ExePath $vjsxBin -Arguments @("check-runtime", "--runtime", "node") | Out-Null
           $dbPath = Join-Path $env:RUNNER_TEMP "aidatastudio-notebook-smoke.sqlite"
           if (Test-Path $dbPath) {
             Remove-Item -Force $dbPath
