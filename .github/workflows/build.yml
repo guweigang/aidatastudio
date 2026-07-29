@@ -638,7 +638,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $runtimeBinDir = "backend\bin\runtime\bin"
+          $runtimeBinDir = "backend\runtime\bin"
           New-Item -ItemType Directory -Force -Path $runtimeBinDir | Out-Null
           $runtimeBinDir = (Resolve-Path $runtimeBinDir).Path
           $vjsxOut = Join-Path $runtimeBinDir "vjsx.exe"
@@ -662,9 +662,12 @@ jobs:
         shell: pwsh
         run: |
           $sidecarDir = Resolve-Path "backend\bin"
-          $runtimeDir = Join-Path $sidecarDir "runtime\libs"
-          $pluginDir = Join-Path $sidecarDir "runtime\plugins"
-          $assetDir = Join-Path $sidecarDir "runtime\assets"
+          $runtimeRoot = "backend\runtime"
+          New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+          $runtimeRoot = (Resolve-Path $runtimeRoot).Path
+          $runtimeDir = Join-Path $runtimeRoot "libs"
+          $pluginDir = Join-Path $runtimeRoot "plugins"
+          $assetDir = Join-Path $runtimeRoot "assets"
           New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
           New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
           New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
@@ -728,7 +731,7 @@ jobs:
           Get-ChildItem -Path $assetDir -File -Recurse | Sort-Object FullName | ForEach-Object {
             Write-Host "staged asset $($_.FullName.Substring($assetDir.Length + 1))"
           }
-          Get-ChildItem -Path (Join-Path $sidecarDir "runtime\bin") -File | Sort-Object Name | ForEach-Object { Write-Host "staged runtime bin $($_.Name)" }
+          Get-ChildItem -Path (Join-Path $runtimeRoot "bin") -File | Sort-Object Name | ForEach-Object { Write-Host "staged runtime bin $($_.Name)" }
           Get-ChildItem -Path $pluginDir -File | Sort-Object Name | ForEach-Object { Write-Host "staged plugin $($_.Name)" }
 
       - name: Inspect Windows sidecar dependencies
@@ -818,10 +821,11 @@ jobs:
 
           $sidecarDir = (Resolve-Path "backend\bin").Path
           $sidecar = Join-Path $sidecarDir "vtable-sidecar.exe"
-          $runtimeDir = Join-Path $sidecarDir "runtime\libs"
-          $pluginDir = Join-Path $sidecarDir "runtime\plugins"
-          $assetDir = Join-Path $sidecarDir "runtime\assets"
-          $runtimeBinDir = Join-Path $sidecarDir "runtime\bin"
+          $runtimeRoot = (Resolve-Path "backend\runtime").Path
+          $runtimeDir = Join-Path $runtimeRoot "libs"
+          $pluginDir = Join-Path $runtimeRoot "plugins"
+          $assetDir = Join-Path $runtimeRoot "assets"
+          $runtimeBinDir = Join-Path $runtimeRoot "bin"
           $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
           $env:PATH = @(
             $sidecarDir,
@@ -914,7 +918,7 @@ jobs:
           if (Test-Path $bundleRoot) {
             Remove-Item -Recurse -Force $bundleRoot
           }
-          $inlineConfig = '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":{"../../backend/bin/vtable-sidecar*.exe":"backend/bin/","../../backend/bin/*.dll":"backend/bin/","../../backend/bin/runtime":"backend/bin/runtime"}}}'
+          $inlineConfig = '{"bundle":{"icon":["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],"resources":{"../../backend/bin/vtable-sidecar*.exe":"backend/bin/","../../backend/bin/*.dll":"backend/bin/","../../backend/runtime":"backend/runtime"}}}'
           $buildArgs = @("tauri", "build", "--target", "x86_64-pc-windows-msvc", "--config", $inlineConfig)
           if (!$env:TAURI_BUILD_CONFIG) {
             $buildArgs += "--no-sign"
