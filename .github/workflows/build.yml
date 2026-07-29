@@ -640,6 +640,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $runtimeBinDir = "backend\bin\runtime\bin"
           New-Item -ItemType Directory -Force -Path $runtimeBinDir | Out-Null
+          $runtimeBinDir = (Resolve-Path $runtimeBinDir).Path
           $vjsxOut = Join-Path $runtimeBinDir "vjsx.exe"
           $vjsxBuildScript = Join-Path $env:GITHUB_WORKSPACE "$env:VJSX_DIR\scripts\build-vjsx.ps1"
           if (!(Test-Path $vjsxBuildScript)) {
