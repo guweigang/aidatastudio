@@ -69,11 +69,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.target_mode == 'both' && '[{"target_mode":"apple-silicon","runner":"macos-15"},{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'intel' && '[{"target_mode":"intel","runner":"macos-15-intel"}]' || inputs.target_mode == 'universal' && '[{"target_mode":"universal","runner":"macos-15"}]' || inputs.target_mode == 'host' && '[{"target_mode":"host","runner":"macos-15"}]' || '[{"target_mode":"apple-silicon","runner":"macos-15"}]') }}
+        include: ${{ fromJSON(inputs.target_mode == 'both' && '[{"target_mode":"apple-silicon","runner":"macos-26"},{"target_mode":"intel","runner":"macos-26-intel"}]' || inputs.target_mode == 'intel' && '[{"target_mode":"intel","runner":"macos-26-intel"}]' || inputs.target_mode == 'universal' && '[{"target_mode":"universal","runner":"macos-26"}]' || inputs.target_mode == 'host' && '[{"target_mode":"host","runner":"macos-26"}]' || '[{"target_mode":"apple-silicon","runner":"macos-26"}]') }}
 
     steps:
       - name: Checkout CI repository
         uses: actions/checkout@v4
+
+      - name: Verify Xcode and macOS SDK
+        run: |
+          set -eu
+          xcodebuild -version
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK ${sdk_version}"
+          case "${sdk_version}" in
+            26.*) ;;
+            *) echo "macOS 26 SDK required, got ${sdk_version}" >&2; exit 1 ;;
+          esac
 
       - name: Prepare CNB authentication
         env:
