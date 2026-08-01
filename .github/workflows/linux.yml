@@ -1,0 +1,199 @@
+name: Build AIData Studio Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "CNB source branch, tag, or commit to build"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aidatastudio-linux-${{ github.event.inputs.source_ref }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_DIR: source
+  VJSX_DIR: vjsx
+  QUICKJS_DIR: quickjs
+  CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
+  VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
+  VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
+  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-show-c-output -d build_quickjs -d use_openssl' }}
+
+jobs:
+  linux:
+    name: Linux package (x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Prepare CNB authentication
+        env:
+          CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CNB_ACCESS_TOKEN}" ]; then
+            git config --global url."https://cnb:${CNB_ACCESS_TOKEN}@cnb.cool/".insteadOf "https://cnb.cool/"
+          fi
+
+      - name: Clone source from CNB
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ inputs.source_ref }}" "${CNB_SOURCE_REPO}" "${SOURCE_DIR}" || {
+            git clone "${CNB_SOURCE_REPO}" "${SOURCE_DIR}"
+            cd "${SOURCE_DIR}"
+            git checkout "${{ inputs.source_ref }}"
+          }
+
+      - name: Clone vjsx
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
+
+      - name: Ensure vjsx managed QuickJS source
+        run: |
+          set -euo pipefail
+          quickjs_path="$(QUICKJS_DIR="${GITHUB_WORKSPACE}/${QUICKJS_DIR}" "${GITHUB_WORKSPACE}/${VJSX_DIR}/scripts/ensure-quickjs.sh")"
+          echo "VJS_QUICKJS_PATH=${quickjs_path}" >> "${GITHUB_ENV}"
+
+      - name: Install Linux system dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            curl \
+            default-libmysqlclient-dev \
+            file \
+            libayatana-appindicator3-dev \
+            libgc-dev \
+            libgtk-3-dev \
+            libpq-dev \
+            librsvg2-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            pkg-config \
+            wget
+
+      - name: Install V
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/vlang/v.git "${RUNNER_TEMP}/v"
+          if ! make -C "${RUNNER_TEMP}/v" CC=cc; then
+            echo "V make failed after bootstrap; checking whether the compiler binary was produced" >&2
+            test -x "${RUNNER_TEMP}/v/v"
+          fi
+          "${RUNNER_TEMP}/v/v" -version
+          echo "${RUNNER_TEMP}/v" >> "${GITHUB_PATH}"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Linux Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            source/desktop/src-tauri/target
+          key: linux-${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            linux-${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        working-directory: source/desktop
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/tauri-cli-bin"
+          cat > "${RUNNER_TEMP}/tauri-cli-bin/cargo-tauri" <<'EOF'
+          #!/bin/sh
+          if [ "${1:-}" = "tauri" ]; then
+            shift
+          fi
+          exec npm exec --yes --package @tauri-apps/cli@^2 -- tauri "$@"
+          EOF
+          chmod +x "${RUNNER_TEMP}/tauri-cli-bin/cargo-tauri"
+          echo "${RUNNER_TEMP}/tauri-cli-bin" >> "${GITHUB_PATH}"
+          PATH="${RUNNER_TEMP}/tauri-cli-bin:${PATH}" cargo tauri --version
+
+      - name: Show toolchain
+        run: |
+          set -euo pipefail
+          v version
+          rustc -vV
+          cargo tauri --version
+          node --version
+          npm --version
+          pkg-config --modversion webkit2gtk-4.1
+          pkg-config --modversion openssl
+          pkg-config --modversion bdw-gc
+
+      - name: Check desktop and Tauri build inputs
+        working-directory: source
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VFLAGS: "-cc clang"
+        run: |
+          set -euo pipefail
+          npm --prefix desktop run check
+          npm --prefix desktop run sidecar:prepare
+          ldd backend/bin/vtable-sidecar > "${RUNNER_TEMP}/sidecar-ldd.txt"
+          cat "${RUNNER_TEMP}/sidecar-ldd.txt"
+          if grep -q "not found" "${RUNNER_TEMP}/sidecar-ldd.txt"; then
+            echo "sidecar has unresolved runtime libraries" >&2
+            exit 1
+          fi
+          backend/bin/vtable-sidecar
+          npm --prefix desktop run build
+          cargo check --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Build Linux package
+        working-directory: source
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VFLAGS: "-cc clang"
+        run: |
+          set -euo pipefail
+          cargo tauri build --bundles appimage,deb
+
+      - name: Collect Linux artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist/linux
+          find source/desktop/src-tauri/target/release/bundle -type f \
+            \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sig" \) \
+            -print -exec cp {} dist/linux/ \;
+          (
+            cd dist/linux
+            sha256sum * > sha256sums.txt
+          )
+          find dist/linux -maxdepth 1 -type f -print | sort
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-linux-${{ inputs.source_ref }}-x64
+          path: dist/linux/*
+          if-no-files-found: error
+          retention-days: 14
