@@ -52,6 +52,19 @@ jobs:
             git checkout "${{ inputs.source_ref }}"
           }
 
+      - name: Apply Linux vjsx shell compatibility
+        run: |
+          set -euo pipefail
+          script="${SOURCE_DIR}/desktop/scripts/prepare-sidecar.sh"
+          expected='sh "$VJSX_SOURCE/scripts/build-vjsx.sh"'
+          replacement='bash "$VJSX_SOURCE/scripts/build-vjsx.sh"'
+          matches="$(grep -F -c "${expected}" "${script}")"
+          if [ "${matches}" -ne 2 ]; then
+            echo "expected 2 vjsx shell calls in ${script}, found ${matches}" >&2
+            exit 1
+          fi
+          sed -i "s|${expected}|${replacement}|g" "${script}"
+
       - name: Clone vjsx
         run: |
           set -euo pipefail
