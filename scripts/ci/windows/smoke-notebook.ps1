@@ -37,6 +37,7 @@ function Invoke-SidecarText {
   $process.WaitForExit()
   $exitCode = $process.ExitCode
   $text = ($stdout + $stderr).Trim()
+  $process.Dispose()
   if ($text) {
     Write-Host $text
   }
@@ -159,6 +160,31 @@ try {
   Remove-Item Env:VTABLE_DATABASE_RUNTIME_ENDPOINT -ErrorAction SilentlyContinue
   Remove-Item Env:VTABLE_DATABASE_RUNTIME_TOKEN -ErrorAction SilentlyContinue
   Remove-Item Env:VTABLE_DATABASE_RUNTIME_OWNER -ErrorAction SilentlyContinue
+  if (!$broker.HasExited -and $brokerEndpoint) {
+    try {
+      $endpointParts = $brokerEndpoint -split ":", 2
+      $shutdownClient = [System.Net.Sockets.TcpClient]::new()
+      $shutdownClient.Connect($endpointParts[0], [int]$endpointParts[1])
+      $shutdownStream = $shutdownClient.GetStream()
+      $shutdownWriter = [System.IO.StreamWriter]::new($shutdownStream, [System.Text.UTF8Encoding]::new($false), 4096, $true)
+      $shutdownReader = [System.IO.StreamReader]::new($shutdownStream, [System.Text.UTF8Encoding]::new($false), $false, 4096, $true)
+      $shutdownWriter.AutoFlush = $true
+      $shutdownRequest = @{
+        token = $brokerToken
+        ownerId = "ci:notebook-smoke"
+        command = "__shutdown_broker"
+        args = @()
+      } | ConvertTo-Json -Compress
+      $shutdownWriter.WriteLine($shutdownRequest)
+      [void]$shutdownReader.ReadLine()
+      $shutdownWriter.Dispose()
+      $shutdownReader.Dispose()
+      $shutdownClient.Dispose()
+      [void]$broker.WaitForExit(5000)
+    } catch {
+      Write-Warning "graceful database runtime broker shutdown failed: $($_.Exception.Message)"
+    }
+  }
   if (!$broker.HasExited) {
     $broker.Kill($true)
     $broker.WaitForExit()
@@ -177,5 +203,20 @@ try {
   }
   if (Test-Path $dbPath) {
     Remove-Item -Force $dbPath
+  }
+
+  $sidecarUnlocked = $false
+  for ($attempt = 0; $attempt -lt 50; $attempt++) {
+    try {
+      $sidecarHandle = [System.IO.File]::Open($sidecar, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+      $sidecarHandle.Dispose()
+      $sidecarUnlocked = $true
+      break
+    } catch {
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  if (!$sidecarUnlocked) {
+    throw "vtable-sidecar.exe is still locked after notebook smoke"
   }
 }
