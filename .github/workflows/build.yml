@@ -52,9 +52,16 @@ concurrency:
 env:
   SOURCE_DIR: source
   VJSX_DIR: vjsx
+  VDUCKDB_DIR: vduckdb
+  VCLICKHOUSE_DIR: vclickhouse
   QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
+  VDUCKDB_REPO: ${{ vars.VDUCKDB_REPO || 'https://github.com/guweigang/vduckdb.git' }}
+  VDUCKDB_REF: ${{ vars.VDUCKDB_REF || 'main' }}
+  VCLICKHOUSE_REPO: ${{ vars.VCLICKHOUSE_REPO || 'https://github.com/guweigang/vclickhouse.git' }}
+  VCLICKHOUSE_REF: ${{ vars.VCLICKHOUSE_REF || 'main' }}
+  DUCKDB_VERSION: ${{ vars.DUCKDB_VERSION || 'v1.5.5' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-show-c-output -d build_quickjs -d use_openssl' }}
@@ -108,6 +115,35 @@ jobs:
         run: |
           set -eu
           git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
+
+      - name: Clone database driver modules
+        run: |
+          set -eu
+          git clone --depth 1 --branch "${VDUCKDB_REF}" "${VDUCKDB_REPO}" "${VDUCKDB_DIR}"
+          git clone --depth 1 --branch "${VCLICKHOUSE_REF}" "${VCLICKHOUSE_REPO}" "${VCLICKHOUSE_DIR}"
+          mkdir -p "${HOME}/.vmodules/rodabt"
+          ln -s "${GITHUB_WORKSPACE}/${VDUCKDB_DIR}" "${HOME}/.vmodules/rodabt/vduckdb"
+
+      - name: Install DuckDB native library
+        run: |
+          set -eu
+          archive="${RUNNER_TEMP}/libduckdb-osx-universal.zip"
+          extract_dir="${RUNNER_TEMP}/libduckdb-osx-universal"
+          curl --fail --location --retry 3 \
+            "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/libduckdb-osx-universal.zip" \
+            --output "${archive}"
+          rm -rf "${extract_dir}"
+          mkdir -p "${extract_dir}"
+          ditto -x -k "${archive}" "${extract_dir}"
+          duckdb_library="$(find "${extract_dir}" -type f -name 'libduckdb.dylib' -print -quit)"
+          if [ -z "${duckdb_library}" ]; then
+            echo "libduckdb.dylib was not found in the DuckDB ${DUCKDB_VERSION} archive" >&2
+            exit 1
+          fi
+          lipo -info "${duckdb_library}"
+          mkdir -p "${SOURCE_DIR}/backend/runtime/libs"
+          cp "${duckdb_library}" "${SOURCE_DIR}/backend/runtime/libs/libduckdb.dylib"
+          echo "LIBDUCKDB_DIR=${GITHUB_WORKSPACE}/${SOURCE_DIR}/backend/runtime/libs" >> "${GITHUB_ENV}"
 
       - name: Ensure vjsx managed QuickJS source
         run: |
@@ -200,7 +236,7 @@ jobs:
           TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_UPDATER_PUBLIC_KEY_SECRET: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://github.com/guweigang/aidatastudio/releases/latest/download/latest.json' }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://update.aidata.studio/latest.json' }}
         run: |
           set -eu
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
@@ -232,6 +268,7 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
           VFLAGS: "-cc clang"
         run: |
           set -eu
@@ -244,6 +281,7 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
           VFLAGS: "-cc clang"
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -350,6 +388,14 @@ jobs:
       - name: Clone vjsx
         shell: pwsh
         run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
+
+      - name: Clone database driver modules
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "$env:VDUCKDB_REF" "$env:VDUCKDB_REPO" "$env:VDUCKDB_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git clone --depth 1 --branch "$env:VCLICKHOUSE_REF" "$env:VCLICKHOUSE_REPO" "$env:VCLICKHOUSE_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Ensure vjsx managed QuickJS source
         shell: bash
@@ -468,6 +514,31 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $installRoot
           & (Join-Path $installRoot "v.exe") version
           git -C $installRoot log -1 --oneline
+
+      - name: Install DuckDB native library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "libduckdb-windows-amd64.zip"
+          $extractDir = Join-Path $env:RUNNER_TEMP "libduckdb-windows-amd64"
+          Invoke-WebRequest `
+            -Uri "https://github.com/duckdb/duckdb/releases/download/$env:DUCKDB_VERSION/libduckdb-windows-amd64.zip" `
+            -OutFile $archive
+          if (Test-Path $extractDir) {
+            Remove-Item -Recurse -Force $extractDir
+          }
+          Expand-Archive -Path $archive -DestinationPath $extractDir
+          $duckdbDll = Get-ChildItem -Path $extractDir -Filter "duckdb.dll" -File -Recurse | Select-Object -First 1
+          if ($null -eq $duckdbDll) {
+            throw "duckdb.dll was not found in the DuckDB $env:DUCKDB_VERSION archive"
+          }
+          $backendBin = Join-Path $env:GITHUB_WORKSPACE "$env:SOURCE_DIR\backend\bin"
+          $runtimeLibs = Join-Path $env:GITHUB_WORKSPACE "$env:SOURCE_DIR\backend\runtime\libs"
+          New-Item -ItemType Directory -Force -Path $backendBin, $runtimeLibs | Out-Null
+          Copy-Item -Force $duckdbDll.FullName (Join-Path $backendBin "libduckdb.dll")
+          Copy-Item -Force $duckdbDll.FullName (Join-Path $runtimeLibs "libduckdb.dll")
+          Add-Content -Path $env:GITHUB_ENV -Value "LIBDUCKDB_DIR=$runtimeLibs"
+          Write-Host "staged $($duckdbDll.FullName)"
 
       - name: Install Windows native dependencies
         shell: pwsh
@@ -619,6 +690,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path $moduleRoot | Out-Null
           Copy-Item -Recurse -Force $env:VTABLE_VJSX_PATH (Join-Path $moduleRoot "vjsx")
           Copy-Item -Recurse -Force (Join-Path $env:VTABLE_VJSX_PATH "runtimejs") (Join-Path $moduleRoot "runtimejs")
+          $vduckdbModuleRoot = Join-Path $moduleRoot "rodabt"
+          New-Item -ItemType Directory -Force -Path $vduckdbModuleRoot | Out-Null
+          Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VDUCKDB_DIR) (Join-Path $vduckdbModuleRoot "vduckdb")
+          Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VCLICKHOUSE_DIR) (Join-Path $moduleRoot "vclickhouse")
           $env:VMODULES = $moduleRoot
           $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
           $mysqlImportLib = Get-ChildItem -Path (Join-Path $env:MYSQL_ROOT "lib") -Include libmariadb.lib, mysqlclient.lib, libmysql.lib, mysql.lib -File -Recurse | Select-Object -First 1
@@ -661,7 +736,7 @@ jobs:
           TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_UPDATER_PUBLIC_KEY_SECRET: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://github.com/guweigang/aidatastudio/releases/latest/download/latest.json' }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://update.aidata.studio/latest.json' }}
         run: |
           $ErrorActionPreference = "Stop"
           if (!$env:TAURI_SIGNING_PRIVATE_KEY) {
@@ -1066,6 +1141,9 @@ jobs:
       - windows
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.latest.outputs.version }}
+      tag: ${{ steps.latest.outputs.tag }}
 
     steps:
       - name: Checkout CI repository
@@ -1092,3 +1170,101 @@ jobs:
           name: AIData Studio ${{ steps.latest.outputs.version }}
           files: latest.json
           fail_on_unmatched_files: true
+
+  upload-r2:
+    name: Upload release artifacts to Cloudflare R2
+    if: inputs.publish_github_release && needs.update-manifest.result == 'success'
+    needs:
+      - update-manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.update-manifest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "${RELEASE_TAG}"
+          mkdir -p dist/release
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir dist/release
+          test -f dist/release/latest.json
+          find dist/release -maxdepth 1 -type f -print | sort
+
+      - name: Point updater manifest at Cloudflare R2
+        env:
+          RELEASE_TAG: ${{ needs.update-manifest.outputs.tag }}
+          R2_PUBLIC_BASE_URL: https://update.aidata.studio
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const manifestPath = "dist/release/latest.json";
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const baseUrl = process.env.R2_PUBLIC_BASE_URL.replace(/\/$/, "");
+          const releaseTag = process.env.RELEASE_TAG;
+
+          for (const platform of Object.values(manifest.platforms || {})) {
+            const fileName = path.basename(decodeURIComponent(new URL(platform.url).pathname));
+            if (!fs.existsSync(path.join("dist/release", fileName))) {
+              throw new Error(`updater artifact is missing: ${fileName}`);
+            }
+            platform.url = `${baseUrl}/releases/${releaseTag}/${encodeURIComponent(fileName)}`;
+          }
+
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          cat dist/release/latest.json
+
+      - name: Upload release artifacts to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          RELEASE_TAG: ${{ needs.update-manifest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?CF_R2_ACCESS_KEY_ID secret is required}"
+          : "${AWS_SECRET_ACCESS_KEY:?CF_R2_SECRET_ACCESS_KEY secret is required}"
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID secret is required}"
+          : "${CF_R2_BUCKET:?CF_R2_BUCKET secret is required}"
+          : "${RELEASE_TAG:?release tag is required}"
+
+          endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws --version
+          aws s3 sync dist/release/ "s3://${CF_R2_BUCKET}/releases/${RELEASE_TAG}/" \
+            --endpoint-url "${endpoint}" \
+            --no-progress
+          aws s3 cp dist/release/latest.json "s3://${CF_R2_BUCKET}/latest.json" \
+            --endpoint-url "${endpoint}" \
+            --content-type application/json \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --no-progress
+
+      - name: Verify public updater manifest
+        env:
+          EXPECTED_VERSION: ${{ needs.update-manifest.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 5 \
+            --retry-delay 2 \
+            --retry-all-errors \
+            "https://update.aidata.studio/latest.json?run=${GITHUB_RUN_ID}" \
+            --output r2-latest.json
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync("r2-latest.json", "utf8"));
+            if (manifest.version !== process.env.EXPECTED_VERSION) {
+              throw new Error(`expected R2 version ${process.env.EXPECTED_VERSION}, got ${manifest.version}`);
+            }
+            console.log(`verified R2 updater manifest ${manifest.version}`);
+          '
