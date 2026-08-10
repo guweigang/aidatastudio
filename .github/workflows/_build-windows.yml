@@ -152,6 +152,11 @@ jobs:
         shell: pwsh
         run: npm ci
 
+      - name: Build Rust SQL parser
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-rust-sql-parser.ps1"'
+
       - name: Build vjsx runtime
         working-directory: source
         shell: pwsh
