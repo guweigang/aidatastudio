@@ -1,0 +1,47 @@
+name: Publish AIData Studio updater manifest
+
+on:
+  workflow_call:
+    outputs:
+      version:
+        value: ${{ jobs.update-manifest.outputs.version }}
+      tag:
+        value: ${{ jobs.update-manifest.outputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  update-manifest:
+    name: Publish updater manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.latest.outputs.version }}
+      tag: ${{ steps.latest.outputs.tag }}
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Generate latest.json
+        id: latest
+        run: |
+          set -eu
+          version="$(node desktop/scripts/generate-tauri-latest-json.mjs dist-artifacts)"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
+          cat latest.json
+
+      - name: Publish latest.json
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.latest.outputs.tag }}
+          name: AIData Studio ${{ steps.latest.outputs.version }}
+          files: latest.json
+          fail_on_unmatched_files: true

@@ -1,0 +1,265 @@
+name: Build AIData Studio Windows
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        required: true
+        type: string
+      publish_github_release:
+        required: true
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_DIR: source
+  VJSX_DIR: vjsx
+  VDUCKDB_DIR: vduckdb
+  VCLICKHOUSE_DIR: vclickhouse
+  QUICKJS_DIR: quickjs
+  CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
+  VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
+  VDUCKDB_REPO: ${{ vars.VDUCKDB_REPO || 'https://github.com/guweigang/vduckdb.git' }}
+  VDUCKDB_REF: ${{ vars.VDUCKDB_REF || 'main' }}
+  VCLICKHOUSE_REPO: ${{ vars.VCLICKHOUSE_REPO || 'https://github.com/guweigang/vclickhouse.git' }}
+  VCLICKHOUSE_REF: ${{ vars.VCLICKHOUSE_REF || 'main' }}
+  DUCKDB_VERSION: ${{ vars.DUCKDB_VERSION || 'v1.5.5' }}
+  VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
+  VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
+  VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-show-c-output -d build_quickjs -d use_openssl' }}
+  VTABLE_WINDOWS_SIDECAR_V_FLAGS: ${{ vars.VTABLE_WINDOWS_SIDECAR_V_FLAGS || '-cc msvc -show-c-output -d link_quickjs' }}
+
+jobs:
+  windows:
+    name: Windows package (x64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout CI repository
+        uses: actions/checkout@v4
+
+      - name: Prepare CNB authentication
+        shell: pwsh
+        env:
+          CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
+        run: |
+          if ($env:CNB_ACCESS_TOKEN) {
+            git config --global url."https://cnb:$env:CNB_ACCESS_TOKEN@cnb.cool/".insteadOf "https://cnb.cool/"
+          }
+
+      - name: Clone source from CNB
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "${{ inputs.source_ref }}" "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
+          if ($LASTEXITCODE -ne 0) {
+            git clone "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Push-Location "$env:SOURCE_DIR"
+            git checkout "${{ inputs.source_ref }}"
+            $code = $LASTEXITCODE
+            Pop-Location
+            if ($code -ne 0) { exit $code }
+          }
+
+      - name: Clone vjsx
+        shell: pwsh
+        run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
+
+      - name: Clone database driver modules
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch "$env:VDUCKDB_REF" "$env:VDUCKDB_REPO" "$env:VDUCKDB_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git clone --depth 1 --branch "$env:VCLICKHOUSE_REF" "$env:VCLICKHOUSE_REPO" "$env:VCLICKHOUSE_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Ensure vjsx managed QuickJS source
+        shell: bash
+        run: |
+          set -euo pipefail
+          quickjs_dir="$(pwd)/${QUICKJS_DIR}"
+          quickjs_path="$(QUICKJS_DIR="${quickjs_dir}" "./${VJSX_DIR}/scripts/ensure-quickjs.sh")"
+          if command -v cygpath >/dev/null 2>&1; then
+            quickjs_path="$(cygpath -w "$quickjs_path")"
+          fi
+          echo "VJS_QUICKJS_PATH=${quickjs_path}" >> "${GITHUB_ENV}"
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Build QuickJS NG on Windows
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-quickjs.ps1"'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Cache Windows vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/vcpkg-binary-cache
+          key: windows-vcpkg-x64-windows-msvc-v1-${{ hashFiles('.github/workflows/_build-windows.yml', 'scripts/ci/windows/*.ps1') }}
+          restore-keys: |
+            windows-vcpkg-x64-windows-msvc-v1-
+
+      - name: Cache Windows Cargo tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri.exe
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-tools-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-tools-v1-
+
+      - name: Cache Windows Tauri target
+        uses: actions/cache@v4
+        with:
+          path: source/desktop/src-tauri/target
+          key: windows-tauri-target-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-tauri-target-v1-
+
+      - name: Setup V on Windows
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\setup-v.ps1"'
+
+      - name: Install DuckDB native library
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-duckdb.ps1"'
+
+      - name: Install Windows native dependencies
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-native-deps.ps1"'
+
+      - name: Install desktop dependencies
+        working-directory: source/desktop
+        shell: pwsh
+        run: npm ci
+
+      - name: Build vjsx runtime and SQL parser bytecode
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-vjsx-runtime.ps1"'
+
+      - name: Prepare Windows sidecar
+        working-directory: source
+        shell: pwsh
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
+          VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-sidecar.ps1"'
+
+      - name: Check desktop and Tauri build inputs
+        working-directory: source
+        shell: pwsh
+        run: |
+          npm --prefix desktop run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --manifest-path desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: |
+          if (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
+            cargo tauri --version
+          } else {
+            cargo install tauri-cli --version "^2" --locked
+          }
+
+      - name: Configure Tauri updater
+        if: inputs.publish_github_release
+        shell: pwsh
+        env:
+          TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_PUBLIC_KEY_SECRET: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://update.aidata.studio/latest.json' }}
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\configure-updater.ps1"'
+
+      - name: Stage sidecar runtime DLLs
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\stage-runtime.ps1"'
+
+      - name: Inspect Windows sidecar dependencies
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\inspect-dependencies.ps1"'
+
+      - name: Doctor Windows sidecar runtime
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\doctor-runtime.ps1"'
+
+      - name: Smoke Windows notebook runtime
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\smoke-notebook.ps1"'
+
+      - name: Prepare Windows Tauri icon
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\prepare-icon.ps1"'
+
+      - name: Build Windows package
+        working-directory: source
+        shell: pwsh
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}\${{ env.VJSX_DIR }}
+          VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-package.ps1"'
+
+      - name: Collect Windows artifacts
+        id: windows_meta
+        shell: pwsh
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\collect-artifacts.ps1"'
+
+      - name: Prune stale Windows release assets
+        if: inputs.publish_github_release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.windows_meta.outputs.version }}
+          RELEASE_TAG: ${{ steps.windows_meta.outputs.tag }}
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\prune-release-assets.ps1"'
+
+      - name: Upload Windows workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-windows-${{ inputs.source_ref }}-x64
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: inputs.publish_github_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.windows_meta.outputs.tag }}
+          name: AIData Studio ${{ steps.windows_meta.outputs.version }}
+          files: |
+            dist/windows/*
+          fail_on_unmatched_files: true

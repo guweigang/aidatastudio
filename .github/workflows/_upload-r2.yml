@@ -1,0 +1,110 @@
+name: Upload AIData Studio release to R2
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload-r2:
+    name: Upload release artifacts to Cloudflare R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "${RELEASE_TAG}"
+          mkdir -p dist/release
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir dist/release
+          test -f dist/release/latest.json
+          find dist/release -maxdepth 1 -type f -print | sort
+
+      - name: Point updater manifest at Cloudflare R2
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          R2_PUBLIC_BASE_URL: https://update.aidata.studio
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const manifestPath = "dist/release/latest.json";
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const baseUrl = process.env.R2_PUBLIC_BASE_URL.replace(/\/$/, "");
+          const releaseTag = process.env.RELEASE_TAG;
+
+          for (const platform of Object.values(manifest.platforms || {})) {
+            const fileName = path.basename(decodeURIComponent(new URL(platform.url).pathname));
+            if (!fs.existsSync(path.join("dist/release", fileName))) {
+              throw new Error(`updater artifact is missing: ${fileName}`);
+            }
+            platform.url = `${baseUrl}/releases/${releaseTag}/${encodeURIComponent(fileName)}`;
+          }
+
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          cat dist/release/latest.json
+
+      - name: Upload release artifacts to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          : "${AWS_ACCESS_KEY_ID:?CF_R2_ACCESS_KEY_ID secret is required}"
+          : "${AWS_SECRET_ACCESS_KEY:?CF_R2_SECRET_ACCESS_KEY secret is required}"
+          : "${CF_ACCOUNT_ID:?CF_ACCOUNT_ID secret is required}"
+          : "${CF_R2_BUCKET:?CF_R2_BUCKET secret is required}"
+          : "${RELEASE_TAG:?release tag is required}"
+
+          endpoint="https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws --version
+          aws s3 sync dist/release/ "s3://${CF_R2_BUCKET}/releases/${RELEASE_TAG}/" \
+            --endpoint-url "${endpoint}" \
+            --no-progress
+          aws s3 cp dist/release/latest.json "s3://${CF_R2_BUCKET}/latest.json" \
+            --endpoint-url "${endpoint}" \
+            --content-type application/json \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --no-progress
+
+      - name: Verify public updater manifest
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 5 \
+            --retry-delay 2 \
+            --retry-all-errors \
+            "https://update.aidata.studio/latest.json?run=${GITHUB_RUN_ID}" \
+            --output r2-latest.json
+          node -e '
+            const fs = require("node:fs");
+            const manifest = JSON.parse(fs.readFileSync("r2-latest.json", "utf8"));
+            if (manifest.version !== process.env.EXPECTED_VERSION) {
+              throw new Error(`expected R2 version ${process.env.EXPECTED_VERSION}, got ${manifest.version}`);
+            }
+            console.log(`verified R2 updater manifest ${manifest.version}`);
+          '
