@@ -1,10 +1,16 @@
 $ErrorActionPreference = "Stop"
 $moduleRoot = Join-Path $env:RUNNER_TEMP "vtable-vmodules-windows"
+$buildOutputDir = Join-Path $env:RUNNER_TEMP "vtable-sidecar-build-windows"
 $outputDir = "backend\bin"
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $outputDir = Resolve-Path $outputDir
 $sidecar = Join-Path $outputDir "vtable-sidecar.exe"
-$targetSidecar = Join-Path $outputDir "vtable-sidecar-x86_64-pc-windows-msvc.exe"
+if (Test-Path $buildOutputDir) {
+  Remove-Item -Recurse -Force $buildOutputDir
+}
+New-Item -ItemType Directory -Force -Path $buildOutputDir | Out-Null
+$builtSidecar = Join-Path $buildOutputDir "vtable-sidecar.exe"
+Get-ChildItem -Path $outputDir -Filter "vtable-sidecar*" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 if (Test-Path $moduleRoot) {
   Remove-Item -Recurse -Force $moduleRoot
 }
@@ -22,10 +28,10 @@ $pgImportLib = Get-ChildItem -Path (Join-Path $env:POSTGRES_ROOT "lib") -Include
 if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $env:MYSQL_ROOT" }
 if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $env:POSTGRES_ROOT" }
 $flags += @("-showcc")
-& v @flags -o $sidecar "backend\cmd\vtable_sidecar"
+& v @flags -o $builtSidecar "backend\cmd\vtable_sidecar"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-if (!(Test-Path $sidecar)) { throw "sidecar build did not produce $sidecar" }
-Copy-Item -Force $sidecar $targetSidecar
+if (!(Test-Path $builtSidecar)) { throw "sidecar build did not produce $builtSidecar" }
+Copy-Item -Force $builtSidecar $sidecar
 Get-ChildItem -Path $outputDir -Filter "vtable-sidecar*.exe" | Sort-Object Name | ForEach-Object {
   Write-Host "prepared $($_.FullName)"
 }

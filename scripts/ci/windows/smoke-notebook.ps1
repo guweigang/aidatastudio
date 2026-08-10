@@ -52,6 +52,7 @@ $runtimeRoot = (Resolve-Path "backend\runtime").Path
 $runtimeDir = Join-Path $runtimeRoot "libs"
 $pluginDir = Join-Path $runtimeRoot "plugins"
 $assetDir = Join-Path $runtimeRoot "assets"
+$driverAssetDir = Join-Path $runtimeRoot "driver-assets"
 $runtimeBinDir = Join-Path $runtimeRoot "bin"
 $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { "C:\Windows" }
 $env:PATH = @(
@@ -63,6 +64,8 @@ $env:PATH = @(
   $systemRoot
 ) -join [System.IO.Path]::PathSeparator
 $env:VJSX_ASSET_ROOT = $assetDir
+$env:VTABLE_BUILTIN_DRIVER_ASSET_DIR = $driverAssetDir
+$env:MARIADB_PLUGIN_DIR = $pluginDir
 $env:VTABLE_NOTEBOOK_DEBUG = "1"
 Write-Host "VJSX_ASSET_ROOT=$env:VJSX_ASSET_ROOT"
 $vjsxBin = Join-Path $runtimeBinDir "vjsx.exe"
