@@ -74,36 +74,105 @@ $dbPath = Join-Path $env:RUNNER_TEMP "aidatastudio-notebook-smoke.sqlite"
 if (Test-Path $dbPath) {
   Remove-Item -Force $dbPath
 }
-Invoke-SidecarText -ExePath $sidecar -Arguments @("init-sqlite", "--db", $dbPath) | Out-Null
-$requests = @(
-  '{"op":"inspect_state"}',
-  '{"op":"run_cell","cellId":"smoke","resultVarName":"result","language":"javascript","code":"1 + 1","last_results":{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0},"schema":{"active_table":"","tables":{},"selected_row":{}}}',
-  '{"op":"shutdown"}'
-) -join [Environment]::NewLine
-$text = Invoke-SidecarText -ExePath $sidecar -Arguments @("notebook-kernel-daemon", "--engine", "SQLITE", "--db", $dbPath) -InputText $requests
-$lines = @($text -split "`r?`n" | Where-Object {
-  $line = $_.Trim()
-  $line -and !$line.StartsWith("[notebook]")
-})
-if ($lines.Count -eq 1) {
-  $single = $lines[0] | ConvertFrom-Json
-  if ($single.ok -eq $false -and ($single.error -like "*unknown command*notebook-kernel-daemon*")) {
-    Write-Warning "notebook-kernel-daemon is not available in this source ref; skipping daemon smoke"
-    return
+Invoke-SidecarText -ExePath $sidecar -Arguments @("initialize-database-file", "--engine", "SQLITE", "--db-path", $dbPath) | Out-Null
+$brokerReadyFile = Join-Path $env:RUNNER_TEMP ("aidatastudio-runtime-broker-{0}.txt" -f ([Guid]::NewGuid().ToString("N")))
+$brokerToken = [Guid]::NewGuid().ToString("N")
+$brokerScript = Join-Path $PSScriptRoot "runtime-broker.ps1"
+$brokerInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$brokerInfo.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+foreach ($argument in @(
+  "-NoProfile",
+  "-File", $brokerScript,
+  "-Sidecar", $sidecar,
+  "-ReadyFile", $brokerReadyFile,
+  "-Token", $brokerToken
+)) {
+  [void]$brokerInfo.ArgumentList.Add($argument)
+}
+$brokerInfo.UseShellExecute = $false
+$brokerInfo.CreateNoWindow = $true
+$brokerInfo.RedirectStandardOutput = $true
+$brokerInfo.RedirectStandardError = $true
+$broker = [System.Diagnostics.Process]::new()
+$broker.StartInfo = $brokerInfo
+if (!$broker.Start()) {
+  throw "failed to start database runtime broker"
+}
+
+try {
+  $brokerEndpoint = ""
+  for ($attempt = 0; $attempt -lt 100; $attempt++) {
+    if (Test-Path $brokerReadyFile) {
+      $brokerEndpoint = (Get-Content -Raw $brokerReadyFile).Trim()
+      if ($brokerEndpoint) {
+        break
+      }
+    }
+    if ($broker.HasExited) {
+      $brokerOutput = $broker.StandardOutput.ReadToEnd()
+      $brokerError = $broker.StandardError.ReadToEnd()
+      throw "database runtime broker exited early with code $($broker.ExitCode): $brokerOutput $brokerError"
+    }
+    Start-Sleep -Milliseconds 100
   }
-}
-if ($lines.Count -lt 3) {
-  throw "notebook daemon smoke returned too few responses: $text"
-}
-$inspect = $lines[0] | ConvertFrom-Json
-$result = $lines[1] | ConvertFrom-Json
-$shutdown = $lines[2] | ConvertFrom-Json
-if ($inspect.ok -ne $true) {
-  throw "notebook inspect failed: $($lines[0])"
-}
-if ($result.ok -ne $true -or $result.kind -eq "error" -or $result.text -ne "2") {
-  throw "notebook run failed: $($lines[1])"
-}
-if ($shutdown.ok -ne $true) {
-  throw "notebook shutdown failed: $($lines[2])"
+  if (!$brokerEndpoint) {
+    throw "timed out waiting for database runtime broker"
+  }
+  $env:VTABLE_DATABASE_RUNTIME_ENDPOINT = $brokerEndpoint
+  $env:VTABLE_DATABASE_RUNTIME_TOKEN = $brokerToken
+  $env:VTABLE_DATABASE_RUNTIME_OWNER = "ci:notebook-smoke"
+
+  $requests = @(
+    '{"op":"inspect_state"}',
+    '{"op":"run_cell","cellId":"sql-smoke","resultVarName":"sql_result","language":"sql","code":"select 42 as runtime_probe","last_results":{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0},"schema":{"active_table":"","tables":{},"selected_row":{}}}',
+    '{"op":"run_cell","cellId":"js-smoke","resultVarName":"result","language":"javascript","code":"1 + 1","last_results":{"source_kind":"workspace-query","source_sql":"","columns":[],"preview_rows":[],"total_rows":0,"page_size":0,"page_offset":0},"schema":{"active_table":"","tables":{},"selected_row":{}}}',
+    '{"op":"shutdown"}'
+  ) -join [Environment]::NewLine
+  $text = Invoke-SidecarText -ExePath $sidecar -Arguments @("notebook-kernel-daemon", "--engine", "SQLITE", "--db", $dbPath) -InputText $requests
+  $lines = @($text -split "`r?`n" | Where-Object {
+    $line = $_.Trim()
+    $line -and !$line.StartsWith("[notebook]")
+  })
+  if ($lines.Count -lt 4) {
+    throw "notebook daemon smoke returned too few responses: $text"
+  }
+  $inspect = $lines[0] | ConvertFrom-Json
+  $sqlResult = $lines[1] | ConvertFrom-Json
+  $jsResult = $lines[2] | ConvertFrom-Json
+  $shutdown = $lines[3] | ConvertFrom-Json
+  if ($inspect.ok -ne $true) {
+    throw "notebook inspect failed: $($lines[0])"
+  }
+  if ($sqlResult.ok -ne $true -or $sqlResult.kind -ne "table" -or $sqlResult.row_count -ne 1) {
+    throw "notebook SQL/runtime broker smoke failed: $($lines[1])"
+  }
+  if ($jsResult.ok -ne $true -or $jsResult.kind -eq "error" -or $jsResult.text -ne "2") {
+    throw "notebook JavaScript smoke failed: $($lines[2])"
+  }
+  if ($shutdown.ok -ne $true) {
+    throw "notebook shutdown failed: $($lines[3])"
+  }
+} finally {
+  Remove-Item Env:VTABLE_DATABASE_RUNTIME_ENDPOINT -ErrorAction SilentlyContinue
+  Remove-Item Env:VTABLE_DATABASE_RUNTIME_TOKEN -ErrorAction SilentlyContinue
+  Remove-Item Env:VTABLE_DATABASE_RUNTIME_OWNER -ErrorAction SilentlyContinue
+  if (!$broker.HasExited) {
+    $broker.Kill($true)
+    $broker.WaitForExit()
+  }
+  $brokerOutput = $broker.StandardOutput.ReadToEnd()
+  $brokerError = $broker.StandardError.ReadToEnd()
+  if ($brokerOutput) {
+    Write-Host $brokerOutput.Trim()
+  }
+  if ($brokerError) {
+    Write-Host $brokerError.Trim()
+  }
+  $broker.Dispose()
+  if (Test-Path $brokerReadyFile) {
+    Remove-Item -Force $brokerReadyFile
+  }
+  if (Test-Path $dbPath) {
+    Remove-Item -Force $dbPath
+  }
 }
