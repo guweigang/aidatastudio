@@ -152,7 +152,7 @@ jobs:
         shell: pwsh
         run: npm ci
 
-      - name: Build vjsx runtime and SQL parser bytecode
+      - name: Build vjsx runtime
         working-directory: source
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-vjsx-runtime.ps1"'
@@ -246,10 +246,17 @@ jobs:
           RELEASE_TAG: ${{ steps.windows_meta.outputs.tag }}
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\prune-release-assets.ps1"'
 
+      - name: Normalize artifact source ref
+        id: artifact_ref
+        shell: pwsh
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node "$env:GITHUB_WORKSPACE\scripts\ci\normalize-artifact-ref.mjs"
+
       - name: Upload Windows workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aidatastudio-windows-${{ inputs.source_ref }}-x64
+          name: aidatastudio-windows-${{ steps.artifact_ref.outputs.value }}-x64
           path: dist/windows/*
           if-no-files-found: error
           retention-days: 14

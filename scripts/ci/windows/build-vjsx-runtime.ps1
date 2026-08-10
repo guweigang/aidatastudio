@@ -16,21 +16,4 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (!(Test-Path $vjsxOut)) {
   throw "vjsx runtime binary was not produced at $vjsxOut"
 }
-
-$assetDir = (Resolve-Path "backend\cmd\vtable_sidecar\sql_parser_assets").Path
-$umdDir = Join-Path $assetDir "umd"
-$parsers = @(
-  @{ Source = "mysql.umd.js"; Output = "mysql-parser.qbc" },
-  @{ Source = "postgresql.umd.js"; Output = "postgresql-parser.qbc" },
-  @{ Source = "sqlite.umd.js"; Output = "sqlite-parser.qbc" }
-)
-foreach ($parser in $parsers) {
-  $source = Join-Path $umdDir $parser.Source
-  $output = Join-Path $assetDir $parser.Output
-  if (!(Test-Path $source)) { throw "SQL parser UMD not found at $source" }
-  & $vjsxOut compile --entry-only --runtime node $source -o $output
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  if (!(Test-Path $output)) { throw "SQL parser bytecode was not produced at $output" }
-  Write-Host "compiled $output"
-}
 Write-Host "prepared $((Resolve-Path $vjsxOut).Path)"

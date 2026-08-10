@@ -176,10 +176,16 @@ jobs:
         id: release_meta
         run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/read-release-metadata.sh"
 
+      - name: Normalize artifact source ref
+        id: artifact_ref
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci/normalize-artifact-ref.mjs"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aidatastudio-macos-${{ inputs.source_ref }}-${{ inputs.release_mode }}-${{ steps.release_meta.outputs.arch }}
+          name: aidatastudio-macos-${{ steps.artifact_ref.outputs.value }}-${{ inputs.release_mode }}-${{ steps.release_meta.outputs.arch }}
           path: dist/macos/*
           if-no-files-found: error
           retention-days: 14
