@@ -36,17 +36,6 @@ if ($null -eq $pgConfigHeader) { throw "pg_config.h not found under $sdkRoot" }
 if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $sdkRoot" }
 if ($null -eq $cryptoImportLib) { throw "OpenSSL crypto import library not found under $sdkRoot" }
 if ($null -eq $sslImportLib) { throw "OpenSSL ssl import library not found under $sdkRoot" }
-$mysqlCdefs = Join-Path $vRoot "vlib\db\mysql\_cdefs_windows.c.v"
-Set-Content -Encoding utf8 -Path $mysqlCdefs -Value @'
-module mysql
-
-#flag windows -I@VEXEROOT/thirdparty/mysql/include
-#flag windows -L@VEXEROOT/thirdparty/mysql/lib
-#flag windows -lmysql
-
-#include <mysql.h> # Please install https://dev.mysql.com/downloads/installer/ , then copy the include, lib, and bin folders to thirdparty/mysql. Make sure thirdparty/mysql/bin and thirdparty/mysql/lib are on PATH, or copy libmysql.dll next to the produced .exe
-#include "@VMODROOT/vlib/db/mysql/mysql_compat.h"
-'@
 Copy-Item -Recurse -Force (Join-Path $mysqlHeader.DirectoryName "*") $vMysqlInclude
 Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "mysql.lib")
 Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.lib")
