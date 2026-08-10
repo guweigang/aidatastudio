@@ -5,7 +5,7 @@ $parserRoot = Join-Path (Get-Location) "backend\native\sql_parser"
 $manifestPath = Join-Path $parserRoot "Cargo.toml"
 $builtLibrary = Join-Path $parserRoot "target\$targetTriple\release\vtable_sql_parser.lib"
 $linkDirectory = Join-Path $parserRoot "lib"
-$linkLibrary = Join-Path $linkDirectory "libvtable_sql_parser.a"
+$linkLibrary = Join-Path $linkDirectory "vtable_sql_parser.lib"
 
 if (!(Test-Path $manifestPath)) {
   throw "Rust SQL parser manifest not found at $manifestPath"
