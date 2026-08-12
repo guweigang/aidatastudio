@@ -21,12 +21,23 @@ $vduckdbModuleRoot = Join-Path $moduleRoot "rodabt"
 New-Item -ItemType Directory -Force -Path $vduckdbModuleRoot | Out-Null
 Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VDUCKDB_DIR) (Join-Path $vduckdbModuleRoot "vduckdb")
 Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VCLICKHOUSE_DIR) (Join-Path $moduleRoot "vclickhouse")
+Copy-Item -Recurse -Force (Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:MONGO_DIR) "src") (Join-Path $moduleRoot "mongo")
 $env:VMODULES = $moduleRoot
 $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
 $mysqlImportLib = Get-ChildItem -Path (Join-Path $env:MYSQL_ROOT "lib") -Include libmariadb.lib, mysqlclient.lib, libmysql.lib, mysql.lib -File -Recurse | Select-Object -First 1
 $pgImportLib = Get-ChildItem -Path (Join-Path $env:POSTGRES_ROOT "lib") -Include libpq.lib, pq.lib -File -Recurse | Select-Object -First 1
+$mongoImportLib = Get-ChildItem -Path (Join-Path $env:MONGO_C_DRIVER_ROOT "lib") -Include mongoc2.lib, libmongoc2.lib -File -Recurse | Select-Object -First 1
+$bsonImportLib = Get-ChildItem -Path (Join-Path $env:MONGO_C_DRIVER_ROOT "lib") -Include bson2.lib, libbson2.lib -File -Recurse | Select-Object -First 1
 if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $env:MYSQL_ROOT" }
 if ($null -eq $pgImportLib) { throw "PostgreSQL libpq import library not found under $env:POSTGRES_ROOT" }
+if ($null -eq $mongoImportLib) { throw "MongoDB mongoc2 import library not found under $env:MONGO_C_DRIVER_ROOT" }
+if ($null -eq $bsonImportLib) { throw "MongoDB bson2 import library not found under $env:MONGO_C_DRIVER_ROOT" }
+$flags += @(
+  "-cflags", "-I$env:MONGOC_INCLUDE_DIR",
+  "-cflags", "-I$env:BSON_INCLUDE_DIR",
+  "-ldflags", $mongoImportLib.FullName,
+  "-ldflags", $bsonImportLib.FullName
+)
 $flags += @("-showcc")
 & v @flags -o $builtSidecar "backend\cmd\vtable_sidecar"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

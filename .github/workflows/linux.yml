@@ -18,9 +18,19 @@ concurrency:
 env:
   SOURCE_DIR: source
   VJSX_DIR: vjsx
+  VDUCKDB_DIR: vduckdb
+  VCLICKHOUSE_DIR: vclickhouse
+  MONGO_DIR: mongo
   QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
+  VDUCKDB_REPO: ${{ vars.VDUCKDB_REPO || 'https://github.com/guweigang/vduckdb.git' }}
+  VDUCKDB_REF: ${{ vars.VDUCKDB_REF || 'main' }}
+  VCLICKHOUSE_REPO: ${{ vars.VCLICKHOUSE_REPO || 'https://github.com/guweigang/vclickhouse.git' }}
+  VCLICKHOUSE_REF: ${{ vars.VCLICKHOUSE_REF || 'main' }}
+  MONGO_REPO: ${{ vars.MONGO_REPO || 'https://github.com/guweigang/mongo.git' }}
+  MONGO_REF: ${{ vars.MONGO_REF || 'main' }}
+  MONGO_C_DRIVER_VERSION: ${{ vars.MONGO_C_DRIVER_VERSION || '2.4.0' }}
   VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
   VTABLE_SIDECAR_V_FLAGS: ${{ vars.VTABLE_SIDECAR_V_FLAGS || '-show-c-output -d build_quickjs -d use_openssl' }}
 
@@ -70,6 +80,16 @@ jobs:
           set -euo pipefail
           git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
 
+      - name: Clone database driver modules
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${VDUCKDB_REF}" "${VDUCKDB_REPO}" "${VDUCKDB_DIR}"
+          git clone --depth 1 --branch "${VCLICKHOUSE_REF}" "${VCLICKHOUSE_REPO}" "${VCLICKHOUSE_DIR}"
+          git clone --depth 1 --branch "${MONGO_REF}" "${MONGO_REPO}" "${MONGO_DIR}"
+          mkdir -p "${HOME}/.vmodules/rodabt"
+          ln -s "${GITHUB_WORKSPACE}/${VDUCKDB_DIR}" "${HOME}/.vmodules/rodabt/vduckdb"
+          ln -s "${GITHUB_WORKSPACE}/${MONGO_DIR}/src" "${HOME}/.vmodules/mongo"
+
       - name: Ensure vjsx managed QuickJS source
         run: |
           set -euo pipefail
@@ -83,6 +103,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
+            cmake \
             curl \
             default-libmysqlclient-dev \
             file \
@@ -90,14 +111,21 @@ jobs:
             libgc-dev \
             libgtk-3-dev \
             libpq-dev \
+            libsasl2-dev \
             librsvg2-dev \
             libsqlite3-dev \
             libssl-dev \
+            libutf8proc-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
+            libzstd-dev \
             patchelf \
             pkg-config \
-            wget
+            wget \
+            zlib1g-dev
+
+      - name: Install MongoDB C driver
+        run: sh "$GITHUB_WORKSPACE/scripts/ci/linux/install-mongodb.sh"
 
       - name: Install V
         run: |
@@ -161,11 +189,13 @@ jobs:
           pkg-config --modversion webkit2gtk-4.1
           pkg-config --modversion openssl
           pkg-config --modversion bdw-gc
+          pkg-config --modversion mongoc2
 
       - name: Check desktop and Tauri build inputs
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
           VFLAGS: "-cc clang"
         run: |
           set -euo pipefail
@@ -185,6 +215,7 @@ jobs:
         working-directory: source
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
           VFLAGS: "-cc clang"
         run: |
           set -euo pipefail
