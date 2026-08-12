@@ -15,20 +15,20 @@ function Get-ReleaseAssetName([string]$Name) {
   return $Name -replace '\s+', '.'
 }
 Get-ChildItem -Path $bundleRoot -File -Recurse | Where-Object {
-  $_.Extension -in @(".msi", ".exe", ".zip", ".sig") -and $_.Name.Contains("_${version}_")
+  $_.Extension -in @(".exe", ".zip", ".sig") -and $_.Name.Contains("_${version}_")
 } | ForEach-Object {
   Copy-Item -Force $_.FullName (Join-Path $dist (Get-ReleaseAssetName $_.Name))
 }
 $artifact = Get-ChildItem -Path $dist -File | Where-Object {
-  $_.Extension -in @(".msi", ".exe", ".zip")
+  $_.Extension -in @(".exe", ".zip")
 } | Sort-Object Name | Select-Object -First 1
 if ($null -eq $artifact) {
   throw "Windows package artifact not found under $dist"
 }
 $updaterArtifact = Get-ChildItem -Path $dist -File | Where-Object {
-  $_.Extension -in @(".zip", ".exe", ".msi") -and (Test-Path "$($_.FullName).sig")
+  $_.Extension -in @(".zip", ".exe") -and (Test-Path "$($_.FullName).sig")
 } | Sort-Object @{ Expression = {
-  if ($_.Extension -eq ".zip") { 0 } elseif ($_.Extension -eq ".exe") { 1 } else { 2 }
+  if ($_.Extension -eq ".zip") { 0 } else { 1 }
 }}, Name | Select-Object -First 1
 if ($env:TAURI_BUILD_CONFIG -and $null -eq $updaterArtifact) {
   Write-Host "Windows dist contents:"
