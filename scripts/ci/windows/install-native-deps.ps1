@@ -31,10 +31,10 @@ $cryptoImportLib = Get-ChildItem -Path $opensslLibDir -Include libcrypto.lib, cr
 $sslImportLib = Get-ChildItem -Path $opensslLibDir -Include libssl.lib, ssl.lib -File -Recurse | Select-Object -First 1
 $mongoHeader = Get-ChildItem -Path $sdkRoot -Filter mongoc.h -File -Recurse | Where-Object { $_.FullName -match "[\\/]mongoc[\\/]mongoc\.h$" } | Select-Object -First 1
 $bsonHeader = Get-ChildItem -Path $sdkRoot -Filter bson.h -File -Recurse | Where-Object { $_.FullName -match "[\\/]bson[\\/]bson\.h$" } | Select-Object -First 1
-$mongoImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include mongoc2.lib, libmongoc2.lib -File -Recurse | Select-Object -First 1
-$bsonImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Include bson2.lib, libbson2.lib -File -Recurse | Select-Object -First 1
-$mongoRuntimeDll = Get-ChildItem -Path (Join-Path $sdkRoot "bin") -Include mongoc2.dll, libmongoc2.dll -File -Recurse | Select-Object -First 1
-$bsonRuntimeDll = Get-ChildItem -Path (Join-Path $sdkRoot "bin") -Include bson2.dll, libbson2.dll -File -Recurse | Select-Object -First 1
+$mongoImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Filter "*mongoc*.lib" -File -Recurse | Where-Object { $_.Name -notmatch "static" } | Sort-Object Name | Select-Object -First 1
+$bsonImportLib = Get-ChildItem -Path (Join-Path $sdkRoot "lib") -Filter "*bson*.lib" -File -Recurse | Where-Object { $_.Name -notmatch "static" } | Sort-Object Name | Select-Object -First 1
+$mongoRuntimeDll = Get-ChildItem -Path (Join-Path $sdkRoot "bin") -Filter "*mongoc*.dll" -File -Recurse | Sort-Object Name | Select-Object -First 1
+$bsonRuntimeDll = Get-ChildItem -Path (Join-Path $sdkRoot "bin") -Filter "*bson*.dll" -File -Recurse | Sort-Object Name | Select-Object -First 1
 if ($null -eq $mysqlHeader) { throw "mysql.h not found under $sdkRoot" }
 if ($null -eq $mysqlImportLib) { throw "MariaDB/MySQL import library not found under $sdkRoot" }
 if ($null -eq $pgHeader) { throw "libpq-fe.h not found under $sdkRoot" }
@@ -44,10 +44,14 @@ if ($null -eq $cryptoImportLib) { throw "OpenSSL crypto import library not found
 if ($null -eq $sslImportLib) { throw "OpenSSL ssl import library not found under $sdkRoot" }
 if ($null -eq $mongoHeader) { throw "mongoc/mongoc.h not found under $sdkRoot" }
 if ($null -eq $bsonHeader) { throw "bson/bson.h not found under $sdkRoot" }
-if ($null -eq $mongoImportLib) { throw "MongoDB mongoc2 import library not found under $sdkRoot" }
-if ($null -eq $bsonImportLib) { throw "MongoDB bson2 import library not found under $sdkRoot" }
-if ($null -eq $mongoRuntimeDll) { throw "MongoDB mongoc2 runtime DLL not found under $sdkRoot" }
-if ($null -eq $bsonRuntimeDll) { throw "MongoDB bson2 runtime DLL not found under $sdkRoot" }
+if ($null -eq $mongoImportLib) { throw "MongoDB mongoc import library not found under $sdkRoot" }
+if ($null -eq $bsonImportLib) { throw "MongoDB bson import library not found under $sdkRoot" }
+if ($null -eq $mongoRuntimeDll) { throw "MongoDB mongoc runtime DLL not found under $sdkRoot" }
+if ($null -eq $bsonRuntimeDll) { throw "MongoDB bson runtime DLL not found under $sdkRoot" }
+Write-Host "MongoDB mongoc import library: $($mongoImportLib.FullName)"
+Write-Host "MongoDB bson import library: $($bsonImportLib.FullName)"
+Write-Host "MongoDB mongoc runtime DLL: $($mongoRuntimeDll.FullName)"
+Write-Host "MongoDB bson runtime DLL: $($bsonRuntimeDll.FullName)"
 Copy-Item -Recurse -Force (Join-Path $mysqlHeader.DirectoryName "*") $vMysqlInclude
 Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "mysql.lib")
 Copy-Item -Force $mysqlImportLib.FullName (Join-Path $vMysqlLib "libmysql.lib")
@@ -92,6 +96,8 @@ Add-Content -Path $env:GITHUB_ENV -Value "POSTGRES_ROOT=$sdkRoot"
 Add-Content -Path $env:GITHUB_ENV -Value "MONGO_C_DRIVER_ROOT=$sdkRoot"
 Add-Content -Path $env:GITHUB_ENV -Value "MONGOC_INCLUDE_DIR=$($mongoHeader.Directory.Parent.FullName)"
 Add-Content -Path $env:GITHUB_ENV -Value "BSON_INCLUDE_DIR=$($bsonHeader.Directory.Parent.FullName)"
+Add-Content -Path $env:GITHUB_ENV -Value "MONGOC_IMPORT_LIB=$($mongoImportLib.FullName)"
+Add-Content -Path $env:GITHUB_ENV -Value "BSON_IMPORT_LIB=$($bsonImportLib.FullName)"
 Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INSTALLED_DIR=$sdkRoot"
 Add-Content -Path $env:GITHUB_ENV -Value "C_INCLUDE_PATH=$sdkRoot\include;$env:C_INCLUDE_PATH"
 Add-Content -Path $env:GITHUB_ENV -Value "LIBRARY_PATH=$sdkRoot\lib;$env:LIBRARY_PATH"
