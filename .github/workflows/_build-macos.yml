@@ -20,6 +20,7 @@ permissions:
   contents: write
 
 env:
+  TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
   VDUCKDB_DIR: vduckdb
