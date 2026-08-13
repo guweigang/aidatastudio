@@ -57,16 +57,10 @@ jobs:
       - name: Clone source from CNB
         shell: pwsh
         run: |
-          git clone --depth 1 --branch "${{ inputs.source_ref }}" "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
-          if ($LASTEXITCODE -ne 0) {
-            git clone "$env:CNB_SOURCE_REPO" "$env:SOURCE_DIR"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            Push-Location "$env:SOURCE_DIR"
-            git checkout "${{ inputs.source_ref }}"
-            $code = $LASTEXITCODE
-            Pop-Location
-            if ($code -ne 0) { exit $code }
-          }
+          & "$env:GITHUB_WORKSPACE/scripts/ci/windows/clone-source.ps1" `
+            -Repository "$env:CNB_SOURCE_REPO" `
+            -SourceRef "${{ inputs.source_ref }}" `
+            -Destination "$env:SOURCE_DIR"
 
       - name: Clone vjsx
         shell: pwsh
