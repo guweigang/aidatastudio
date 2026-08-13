@@ -13,6 +13,12 @@ independently into scripts. Pass GitHub expression values to scripts through
 explicit environment variables instead of embedding `${{ ... }}` expressions in
 script files.
 
+All platforms install V from `scripts/ci/v-toolchain.env`. The repository,
+branch, and exact commit live there so a compiler change is reviewed once and
+applies consistently to macOS, Linux, and Windows. Keep `V_COMMIT` pinned even
+when switching back to upstream `vlang/v`. `V_COMMIT` must be the head of
+`V_BRANCH`; the installers use a single-commit shallow clone and verify it.
+
 The macOS scripts are POSIX shell scripts and can be syntax-checked with:
 
 ```sh
