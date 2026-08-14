@@ -15,6 +15,24 @@ if [ -z "${duckdb_library}" ]; then
   exit 1
 fi
 lipo -info "${duckdb_library}"
+
+case "$(uname -m)" in
+  arm64)
+    duckdb_arch="arm64"
+    ;;
+  x86_64)
+    duckdb_arch="x86_64"
+    ;;
+  *)
+    echo "unsupported macOS runner architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+thin_duckdb_library="${extract_dir}/libduckdb-${duckdb_arch}.dylib"
+lipo "${duckdb_library}" -thin "${duckdb_arch}" -output "${thin_duckdb_library}"
+lipo "${thin_duckdb_library}" -verify_arch "${duckdb_arch}"
+lipo -info "${thin_duckdb_library}"
 mkdir -p "${SOURCE_DIR}/backend/runtime/libs"
-cp "${duckdb_library}" "${SOURCE_DIR}/backend/runtime/libs/libduckdb.dylib"
+cp "${thin_duckdb_library}" "${SOURCE_DIR}/backend/runtime/libs/libduckdb.dylib"
 echo "LIBDUCKDB_DIR=${GITHUB_WORKSPACE}/${SOURCE_DIR}/backend/runtime/libs" >> "${GITHUB_ENV}"
