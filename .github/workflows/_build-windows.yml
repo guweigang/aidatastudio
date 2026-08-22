@@ -20,6 +20,7 @@ env:
   VDUCKDB_DIR: vduckdb
   VCLICKHOUSE_DIR: vclickhouse
   MONGO_DIR: mongo
+  VMARKDOWN_DIR: vmarkdown
   QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
@@ -29,6 +30,8 @@ env:
   VCLICKHOUSE_REF: ${{ vars.VCLICKHOUSE_REF || 'main' }}
   MONGO_REPO: ${{ vars.MONGO_REPO || 'https://github.com/guweigang/mongo.git' }}
   MONGO_REF: ${{ vars.MONGO_REF || 'main' }}
+  VMARKDOWN_REPO: ${{ vars.VMARKDOWN_REPO || 'https://github.com/guweigang/vmarkdown.git' }}
+  VMARKDOWN_REF: ${{ vars.VMARKDOWN_REF || 'master' }}
   DUCKDB_VERSION: ${{ vars.DUCKDB_VERSION || 'v1.5.5' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
@@ -66,7 +69,7 @@ jobs:
         shell: pwsh
         run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
 
-      - name: Clone database driver modules
+      - name: Clone V modules
         shell: pwsh
         run: |
           git clone --depth 1 --branch "$env:VDUCKDB_REF" "$env:VDUCKDB_REPO" "$env:VDUCKDB_DIR"
@@ -74,6 +77,8 @@ jobs:
           git clone --depth 1 --branch "$env:VCLICKHOUSE_REF" "$env:VCLICKHOUSE_REPO" "$env:VCLICKHOUSE_DIR"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git clone --depth 1 --branch "$env:MONGO_REF" "$env:MONGO_REPO" "$env:MONGO_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git clone --depth 1 --branch "$env:VMARKDOWN_REF" "$env:VMARKDOWN_REPO" "$env:VMARKDOWN_DIR"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Ensure vjsx managed QuickJS source

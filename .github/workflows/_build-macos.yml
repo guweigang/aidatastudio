@@ -26,6 +26,7 @@ env:
   VDUCKDB_DIR: vduckdb
   VCLICKHOUSE_DIR: vclickhouse
   MONGO_DIR: mongo
+  VMARKDOWN_DIR: vmarkdown
   QUICKJS_DIR: quickjs
   CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
   VJSX_REPO: ${{ vars.VJSX_REPO || 'https://github.com/guweigang/vjsx.git' }}
@@ -35,6 +36,8 @@ env:
   VCLICKHOUSE_REF: ${{ vars.VCLICKHOUSE_REF || 'main' }}
   MONGO_REPO: ${{ vars.MONGO_REPO || 'https://github.com/guweigang/mongo.git' }}
   MONGO_REF: ${{ vars.MONGO_REF || 'main' }}
+  VMARKDOWN_REPO: ${{ vars.VMARKDOWN_REPO || 'https://github.com/guweigang/vmarkdown.git' }}
+  VMARKDOWN_REF: ${{ vars.VMARKDOWN_REF || 'master' }}
   DUCKDB_VERSION: ${{ vars.DUCKDB_VERSION || 'v1.5.5' }}
   VCPKG_BINARY_CACHE_DIR: ${{ github.workspace }}\.cache\vcpkg-binary-cache
   VTABLE_SIDECAR_V_CC: ${{ vars.VTABLE_SIDECAR_V_CC || 'clang' }}
@@ -81,15 +84,17 @@ jobs:
           set -eu
           git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
 
-      - name: Clone database driver modules
+      - name: Clone V modules
         run: |
           set -eu
           git clone --depth 1 --branch "${VDUCKDB_REF}" "${VDUCKDB_REPO}" "${VDUCKDB_DIR}"
           git clone --depth 1 --branch "${VCLICKHOUSE_REF}" "${VCLICKHOUSE_REPO}" "${VCLICKHOUSE_DIR}"
           git clone --depth 1 --branch "${MONGO_REF}" "${MONGO_REPO}" "${MONGO_DIR}"
+          git clone --depth 1 --branch "${VMARKDOWN_REF}" "${VMARKDOWN_REPO}" "${VMARKDOWN_DIR}"
           mkdir -p "${HOME}/.vmodules/rodabt"
           ln -s "${GITHUB_WORKSPACE}/${VDUCKDB_DIR}" "${HOME}/.vmodules/rodabt/vduckdb"
           ln -s "${GITHUB_WORKSPACE}/${MONGO_DIR}/src" "${HOME}/.vmodules/mongo"
+          ln -s "${GITHUB_WORKSPACE}/${VMARKDOWN_DIR}" "${HOME}/.vmodules/vmarkdown"
 
       - name: Install DuckDB native library
         run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/install-duckdb.sh"

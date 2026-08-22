@@ -22,6 +22,7 @@ New-Item -ItemType Directory -Force -Path $vduckdbModuleRoot | Out-Null
 Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VDUCKDB_DIR) (Join-Path $vduckdbModuleRoot "vduckdb")
 Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VCLICKHOUSE_DIR) (Join-Path $moduleRoot "vclickhouse")
 Copy-Item -Recurse -Force (Join-Path (Join-Path $env:GITHUB_WORKSPACE $env:MONGO_DIR) "src") (Join-Path $moduleRoot "mongo")
+Copy-Item -Recurse -Force (Join-Path $env:GITHUB_WORKSPACE $env:VMARKDOWN_DIR) (Join-Path $moduleRoot "vmarkdown")
 $env:VMODULES = $moduleRoot
 $flags = $env:VTABLE_SIDECAR_V_FLAGS -split '\s+' | Where-Object { $_ }
 $mysqlImportLib = Get-ChildItem -Path (Join-Path $env:MYSQL_ROOT "lib") -Include libmariadb.lib, mysqlclient.lib, libmysql.lib, mysql.lib -File -Recurse | Select-Object -First 1
