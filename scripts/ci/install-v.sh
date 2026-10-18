@@ -10,6 +10,8 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"
 : "${V_REPO:?V_REPO is required}"
 : "${V_COMMIT:?V_COMMIT is required}"
+: "${VC_REPO:?VC_REPO is required}"
+: "${VC_COMMIT:?VC_COMMIT is required}"
 
 install_root="${RUNNER_TEMP}/v"
 
@@ -24,15 +26,23 @@ if [ "$actual_commit" != "$V_COMMIT" ]; then
   exit 1
 fi
 
+git init "$install_root/vc"
+git -C "$install_root/vc" remote add origin "$VC_REPO"
+git -C "$install_root/vc" fetch --depth 1 origin "$VC_COMMIT"
+git -C "$install_root/vc" checkout --detach "$VC_COMMIT"
+test "$(git -C "$install_root/vc" rev-parse HEAD)" = "$VC_COMMIT"
+# Prepare platform-native compiler libraries without updating the pinned VC.
+make -C "$install_root" latest_tcc latest_legacy
+
 case "$(uname -s)" in
   Linux)
-    if ! make -C "$install_root" CC=cc; then
+    if ! make -C "$install_root" local=1 CC=cc; then
       echo "V make failed after bootstrap; checking whether the compiler binary was produced" >&2
       test -x "$install_root/v"
     fi
     ;;
   Darwin)
-    if ! make -C "$install_root"; then
+    if ! make -C "$install_root" local=1; then
       echo "V make failed after bootstrap; checking whether the compiler binary was produced" >&2
       test -x "$install_root/v"
     fi
