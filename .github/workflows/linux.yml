@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  V_MACOS_V3_NO_FALLBACK: 1
   TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
@@ -140,6 +141,9 @@ jobs:
       - name: Install MongoDB C driver
         run: sh "$GITHUB_WORKSPACE/scripts/ci/linux/install-mongodb.sh"
 
+      - name: Install DuckDB native library
+        run: bash scripts/ci/linux/install-duckdb.sh
+
       - name: Install V
         run: sh "$GITHUB_WORKSPACE/scripts/ci/install-v.sh"
 
@@ -226,6 +230,9 @@ jobs:
           npm --prefix desktop run build
           cargo check --manifest-path desktop/src-tauri/Cargo.toml
 
+      - name: Stage Linux sidecar dependency closure
+        run: python3 scripts/ci/linux/stage-sidecar-libraries.py
+
       - name: Build Linux package
         working-directory: source
         env:
@@ -235,6 +242,17 @@ jobs:
         run: |
           set -euo pipefail
           cargo tauri build --bundles appimage,deb
+
+      - name: Preserve Linux package candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-linux-candidate-${{ github.run_id }}
+          path: |
+            source/desktop/src-tauri/target/release/bundle/deb/*.deb
+            source/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify installed Linux OCR runtime
         run: bash scripts/ci/linux/verify-installed-ocr.sh
