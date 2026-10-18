@@ -4,11 +4,15 @@ New-Item -ItemType Directory -Force -Path "$env:VCPKG_BINARY_CACHE_DIR" | Out-Nu
 $env:VCPKG_DEFAULT_BINARY_CACHE = "$env:VCPKG_BINARY_CACHE_DIR"
 Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_DEFAULT_BINARY_CACHE=$env:VCPKG_BINARY_CACHE_DIR"
 $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
-git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
+$runtimeSources = Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE "source/desktop/native/attachment-ocr/runtime-sources.json") | ConvertFrom-Json
+git clone --filter=blob:none https://github.com/microsoft/vcpkg $vcpkgRoot
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git -C $vcpkgRoot checkout --detach $runtimeSources.vcpkgCommit
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $triplet = "x64-windows"
-& (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet libpq:$triplet bdwgc:$triplet mongo-c-driver:$triplet
+& (Join-Path $vcpkgRoot "vcpkg.exe") install openssl:$triplet libmariadb:$triplet libpq:$triplet bdwgc:$triplet mongo-c-driver:$triplet tesseract:$triplet
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $sdkRoot = Join-Path $vcpkgRoot "installed\$triplet"
 $vRoot = Join-Path $env:RUNNER_TEMP "vlang"
