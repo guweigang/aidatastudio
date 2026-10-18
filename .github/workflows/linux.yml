@@ -120,6 +120,7 @@ jobs:
             libsasl2-dev \
             librsvg2-dev \
             libsqlite3-dev \
+            libtesseract-dev \
             libssl-dev \
             libutf8proc-dev \
             libwebkit2gtk-4.1-dev \
@@ -156,6 +157,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Build and stage native attachment OCR
+        working-directory: source
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/linux/stage-attachment-ocr.sh"
 
       - name: Install desktop dependencies
         working-directory: source/desktop
@@ -229,6 +234,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/linux
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/native-acceptance.json" dist/linux/ocr-native-acceptance.json
+          cp source/backend/runtime/attachment-ocr/manifest.json dist/linux/ocr-manifest.json
           find source/desktop/src-tauri/target/release/bundle -type f \
             \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sig" \) \
             -print -exec cp {} dist/linux/ \;
