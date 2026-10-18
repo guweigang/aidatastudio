@@ -48,6 +48,12 @@ jobs:
       - name: Checkout CI repository
         uses: actions/checkout@v4
 
+      - name: Normalize artifact ref
+        id: artifact_ref
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node scripts/ci/normalize-artifact-ref.mjs
+
       - name: Prepare CNB authentication
         env:
           CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
@@ -230,12 +236,16 @@ jobs:
           set -euo pipefail
           cargo tauri build --bundles appimage,deb
 
+      - name: Verify installed Linux OCR runtime
+        run: bash scripts/ci/linux/verify-installed-ocr.sh
+
       - name: Collect Linux artifacts
         run: |
           set -euo pipefail
           mkdir -p dist/linux
           cp "$RUNNER_TEMP/attachment-ocr-evidence/native-acceptance.json" dist/linux/ocr-native-acceptance.json
           cp source/backend/runtime/attachment-ocr/manifest.json dist/linux/ocr-manifest.json
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/installed-"*.json dist/linux/
           find source/desktop/src-tauri/target/release/bundle -type f \
             \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sig" \) \
             -print -exec cp {} dist/linux/ \;
@@ -248,7 +258,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aidatastudio-linux-${{ inputs.source_ref }}-x64
+          name: aidatastudio-linux-${{ steps.artifact_ref.outputs.value }}-x64
           path: dist/linux/*
           if-no-files-found: error
           retention-days: 14
