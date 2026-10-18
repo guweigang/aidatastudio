@@ -142,7 +142,8 @@ jobs:
             windows-cargo-tools-v2-tauri-${{ env.TAURI_CLI_VERSION }}-
 
       - name: Cache Windows Tauri target
-        uses: actions/cache@v4
+        id: tauri_cache
+        uses: actions/cache/restore@v4
         with:
           path: source/desktop/src-tauri/target
           key: windows-tauri-target-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
@@ -211,18 +212,9 @@ jobs:
           cargo check --manifest-path desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Install Tauri CLI
+      - name: Install pinned prebuilt Tauri CLI
         shell: pwsh
-        run: |
-          $expected = "tauri-cli $env:TAURI_CLI_VERSION"
-          $actual = if (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
-            (cargo tauri --version).Trim()
-          }
-          if ($actual -ne $expected) {
-            cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked --force
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          cargo tauri --version
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-tauri-cli.ps1"'
 
       - name: Prepare audited NSIS upgrade template
         shell: pwsh
@@ -272,6 +264,25 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-package.ps1"'
+
+      - name: Save completed Windows application build cache
+        if: steps.tauri_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source/desktop/src-tauri/target
+          key: ${{ steps.tauri_cache.outputs.cache-primary-key }}
+
+      - name: Retain Windows package candidate before installation checks
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\save-package-candidate.ps1"'
+
+      - name: Upload Windows package candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-windows-candidate-${{ github.run_id }}
+          path: dist/windows-candidate/*
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify NSIS upgrade preserves app data
         shell: pwsh

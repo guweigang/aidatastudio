@@ -4,7 +4,7 @@ $entries = @(
     ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -eq "AI Data Studio" }
 )
 if ($entries.Count -ne 1) { throw "Expected exactly one installed AI Data Studio" }
-$installed = $entries[0].InstallLocation
+$installed = ([string]$entries[0].InstallLocation).Trim().Trim('"')
 if (!$installed) { throw "Installed application location missing from uninstall entry" }
 $runtime = Join-Path $installed "backend/runtime/attachment-ocr"
 $source = Join-Path $env:GITHUB_WORKSPACE "source"
