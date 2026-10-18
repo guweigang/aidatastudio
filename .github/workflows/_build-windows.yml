@@ -15,6 +15,8 @@ permissions:
 
 env:
   PYTHONUTF8: 1
+  # Release builds must keep the pinned compiler and standard library together.
+  V_MACOS_V3_NO_FALLBACK: 1
   TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
@@ -165,6 +167,10 @@ jobs:
         with:
           path: .cache/vcpkg-binary-cache
           key: ${{ steps.native_cache.outputs.cache-primary-key }}
+
+      - name: Bind V to the selected native SDK and smoke OpenSSL
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\configure-v-native-sdk.ps1"'
 
       - name: Build and stage native attachment OCR
         working-directory: source
