@@ -66,9 +66,9 @@ jobs:
             -SourceRef "${{ inputs.source_ref }}" `
             -Destination "$env:SOURCE_DIR"
 
-      - name: Clone vjsx
-        shell: pwsh
-        run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
+      - name: Clone pinned vjsx
+        shell: bash
+        run: sh scripts/ci/clone-vjsx.sh
 
       - name: Clone V modules
         shell: pwsh
@@ -120,7 +120,8 @@ jobs:
           cache-dependency-path: source/desktop/package-lock.json
 
       - name: Cache Windows vcpkg binary packages
-        uses: actions/cache@v4
+        id: native_cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/vcpkg-binary-cache
           key: windows-vcpkg-x64-windows-msvc-v1-${{ hashFiles('.github/workflows/_build-windows.yml', 'scripts/ci/windows/*.ps1') }}
@@ -157,6 +158,13 @@ jobs:
       - name: Install Windows native dependencies
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-native-deps.ps1"'
+
+      - name: Save completed native dependency packages
+        if: steps.native_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/vcpkg-binary-cache
+          key: ${{ steps.native_cache.outputs.cache-primary-key }}
 
       - name: Build and stage native attachment OCR
         working-directory: source

@@ -40,5 +40,5 @@ $env:PATH = "$env:WINDIR/System32;$env:WINDIR"
 $env:PYTHONUTF8 = "1"
 & $python "$source/desktop/scripts/test-attachment-ocr.py" --runtime "$runtime" --normalizer "$source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe.exe" --output "$evidence/installed-acceptance.json"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = $manifest.files.PSObject.Properties.Count; sdkPathsRemoved = $true; dependencies = $dependencies } |
+[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; dependencies = $dependencies } |
   ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$evidence/installed-distribution.json"

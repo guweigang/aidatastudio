@@ -82,7 +82,7 @@ jobs:
       - name: Clone vjsx
         run: |
           set -euo pipefail
-          git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
+          sh scripts/ci/clone-vjsx.sh
 
       - name: Clone V modules
         run: |
