@@ -12,6 +12,11 @@ assert os.access(worker,os.X_OK)
 env=dict(os.environ,PATH='/usr/bin:/bin')
 for key in list(env):
     if key.startswith(('LD_','DYLD_','TESSDATA_')):del env[key]
+backend=next(p for p in files if p.name=='vtable-sidecar')
+empty=root/'empty-cwd';empty.mkdir(exist_ok=True)
+env.update(VTABLE_APP_DATA_DIR=str(root/'installed-app'),VTABLE_USER_WORKSPACE_ROOT=str(root/'installed-workspaces'),LIBDUCKDB_DIR=str(backend.parent.parent/'runtime/libs'))
+initialized=json.loads(subprocess.check_output([str(backend),'ensure-system-workspace'],env=env,cwd=empty))
+assert initialized['ok'],initialized
 base=('libc.so','libm.so','libpthread.so','libdl.so','librt.so','ld-linux','linux-vdso','libresolv.so','libutil.so')
 edges=[]
 for binary in (runtime/'lib').iterdir():
@@ -26,4 +31,4 @@ subprocess.run(['python3','source/desktop/scripts/test-attachment-ocr.py','--run
 staged=json.loads((root/'native-acceptance.json').read_text())
 installed=json.loads((root/'installed-acceptance.json').read_text())
 assert staged['outputs']==installed['outputs']
-(root/'installed-distribution.json').write_text(json.dumps(dict(status='passed',runtime=str(runtime),manifestFiles=len(manifest['files']),dependencyEdges=edges,executable=True,stagedAndInstalledOutputsEqual=True),indent=2)+'\n')
+(root/'installed-distribution.json').write_text(json.dumps(dict(status='passed',runtime=str(runtime),manifestFiles=len(manifest['files']),dependencyEdges=edges,executable=True,stagedAndInstalledOutputsEqual=True,installedSidecarInitializedFromEmptyCwd=True),indent=2)+'\n')
