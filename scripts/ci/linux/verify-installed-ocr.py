@@ -1,7 +1,8 @@
-import hashlib,json,os,subprocess
+import argparse,hashlib,json,os,subprocess
 from pathlib import Path
 root=Path(os.environ['RUNNER_TEMP'])/'attachment-ocr-evidence'
-files=[Path(p) for p in (root/'installed-files.txt').read_text().splitlines()]
+ap=argparse.ArgumentParser();ap.add_argument('--file-list',type=Path,default=root/'installed-files.txt');ap.add_argument('--receipt-prefix',choices=['installed','appimage'],default='installed');args=ap.parse_args()
+files=[Path(p) for p in args.file_list.read_text().splitlines()]
 worker=next(p for p in files if p.name=='vtable-attachment-ocr' and 'attachment-ocr' in str(p))
 runtime=worker.parent.parent
 manifest=json.loads((runtime/'manifest.json').read_text())
@@ -19,7 +20,7 @@ initialized=json.loads(subprocess.check_output([str(backend),'ensure-system-work
 assert initialized['ok'],initialized
 base=('libc.so','libm.so','libpthread.so','libdl.so','librt.so','ld-linux','linux-vdso','libresolv.so','libutil.so')
 edges=[]
-for binary in (runtime/'lib').iterdir():
+for binary in [worker,*(runtime/'lib').iterdir()]:
     output=subprocess.check_output(['ldd',str(binary)],env=env,text=True)
     assert 'not found' not in output,(binary,output)
     for line in output.splitlines():
@@ -27,8 +28,8 @@ for binary in (runtime/'lib').iterdir():
         name,target=line.strip().split('=>',1);name=name.strip();target=Path(target.rsplit(' (',1)[0].strip())
         if not name.startswith(base):assert target.resolve().is_relative_to(runtime.resolve()),(binary,name,str(target))
         edges.append(dict(binary=binary.name,dependency=name,path=str(target)))
-subprocess.run(['python3','source/desktop/scripts/test-attachment-ocr.py','--runtime',str(runtime),'--normalizer','source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe','--output',str(root/'installed-acceptance.json')],env=env,check=True)
+subprocess.run(['python3','source/desktop/scripts/test-attachment-ocr.py','--runtime',str(runtime),'--normalizer','source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe','--output',str(root/(args.receipt_prefix+'-acceptance.json'))],env=env,check=True)
 staged=json.loads((root/'native-acceptance.json').read_text())
-installed=json.loads((root/'installed-acceptance.json').read_text())
+installed=json.loads((root/(args.receipt_prefix+'-acceptance.json')).read_text())
 assert staged['outputs']==installed['outputs']
-(root/'installed-distribution.json').write_text(json.dumps(dict(status='passed',runtime=str(runtime),manifestFiles=len(manifest['files']),dependencyEdges=edges,executable=True,stagedAndInstalledOutputsEqual=True,installedSidecarInitializedFromEmptyCwd=True),indent=2)+'\n')
+(root/(args.receipt_prefix+'-distribution.json')).write_text(json.dumps(dict(status='passed',runtime=str(runtime),manifestFiles=len(manifest['files']),dependencyEdges=edges,executable=True,stagedAndInstalledOutputsEqual=True,installedSidecarInitializedFromEmptyCwd=True),indent=2)+'\n')

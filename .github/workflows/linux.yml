@@ -228,7 +228,7 @@ jobs:
           VFLAGS: "-cc clang"
         run: |
           set -euo pipefail
-          cargo tauri build --bundles appimage,deb
+          NO_STRIP=1 cargo tauri build --bundles appimage,deb
 
       - name: Preserve Linux package candidate
         uses: actions/upload-artifact@v4
@@ -244,6 +244,15 @@ jobs:
       - name: Verify installed Linux OCR runtime
         run: bash scripts/ci/linux/verify-installed-ocr.sh
 
+      - name: Verify AppImage sealed OCR runtime
+        run: |
+          set -euo pipefail
+          image="$(find "$GITHUB_WORKSPACE/source/desktop/src-tauri/target/release/bundle/appimage" -maxdepth 1 -name '*.AppImage')"
+          mkdir -p "$RUNNER_TEMP/appimage-verification"
+          (cd "$RUNNER_TEMP/appimage-verification" && "$image" --appimage-extract > extraction.log)
+          find "$RUNNER_TEMP/appimage-verification/squashfs-root" -type f > "$RUNNER_TEMP/attachment-ocr-evidence/appimage-files.txt"
+          python3 scripts/ci/linux/verify-installed-ocr.py --file-list "$RUNNER_TEMP/attachment-ocr-evidence/appimage-files.txt" --receipt-prefix appimage
+
       - name: Collect Linux artifacts
         run: |
           set -euo pipefail
@@ -251,6 +260,7 @@ jobs:
           cp "$RUNNER_TEMP/attachment-ocr-evidence/native-acceptance.json" dist/linux/ocr-native-acceptance.json
           cp source/backend/runtime/attachment-ocr/manifest.json dist/linux/ocr-manifest.json
           cp "$RUNNER_TEMP/attachment-ocr-evidence/installed-"*.json dist/linux/
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/appimage-"*.json dist/linux/
           find source/desktop/src-tauri/target/release/bundle -type f \
             \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sig" \) \
             -print -exec cp {} dist/linux/ \;
