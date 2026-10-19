@@ -7,6 +7,10 @@ on:
         description: "CNB source branch, tag, or commit to build"
         required: true
         default: "main"
+      verify_windows_candidate_run_id:
+        description: "Verify a retained Windows candidate from this workflow run without rebuilding"
+        required: false
+        default: ""
       platform:
         description: "Platform to build"
         required: true
@@ -51,7 +55,7 @@ concurrency:
 
 jobs:
   macos:
-    if: inputs.platform == 'macos' || inputs.platform == 'all'
+    if: inputs.verify_windows_candidate_run_id == '' && (inputs.platform == 'macos' || inputs.platform == 'all')
     uses: ./.github/workflows/_build-macos.yml
     with:
       source_ref: ${{ inputs.source_ref }}
@@ -61,17 +65,73 @@ jobs:
     secrets: inherit
 
   windows:
-    if: inputs.platform == 'windows' || inputs.platform == 'all'
+    if: inputs.verify_windows_candidate_run_id == '' && (inputs.platform == 'windows' || inputs.platform == 'all')
     uses: ./.github/workflows/_build-windows.yml
     with:
       source_ref: ${{ inputs.source_ref }}
       publish_github_release: ${{ inputs.publish_github_release }}
     secrets: inherit
 
+  verify-windows-candidate:
+    if: inputs.verify_windows_candidate_run_id != ''
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: aidatastudio-windows-candidate-${{ inputs.verify_windows_candidate_run_id }}
+          run-id: ${{ inputs.verify_windows_candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore exact candidate inputs
+        shell: pwsh
+        env:
+          CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
+          CNB_SOURCE_REPO: ${{ vars.CNB_SOURCE_REPO || 'https://cnb.cool/bullsoft/vtable.git' }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:CNB_ACCESS_TOKEN) {
+            git config --global url."https://cnb:$env:CNB_ACCESS_TOKEN@cnb.cool/".insteadOf "https://cnb.cool/"
+          }
+          $meta = Get-Content -Raw candidate/candidate.json | ConvertFrom-Json
+          $installer = Join-Path candidate $meta.installer
+          if ((Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() -ne $meta.installerSha256) { throw "Candidate installer digest mismatch" }
+          & ./scripts/ci/windows/clone-source.ps1 -Repository $env:CNB_SOURCE_REPO -SourceRef $meta.sourceCommit -Destination source
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bundle = "source/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $probe = "source/desktop/native/attachment-ocr/target/release"
+          New-Item -ItemType Directory -Force $bundle, $probe, "source/backend/runtime/attachment-ocr", "$env:RUNNER_TEMP/attachment-ocr-evidence" | Out-Null
+          Copy-Item $installer $bundle
+          Copy-Item candidate/attachment-normalization-probe.exe $probe
+          Copy-Item candidate/manifest.json source/backend/runtime/attachment-ocr/
+      - name: Verify upgrade preserves app data
+        shell: pwsh
+        run: '& ./scripts/ci/windows/smoke-installer-upgrade.ps1'
+      - name: Verify installed candidate
+        shell: pwsh
+        run: '& ./scripts/ci/windows/verify-installed-ocr.ps1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-candidate-verification-${{ github.run_id }}
+          path: ${{ runner.temp }}/attachment-ocr-evidence/*.json
+          if-no-files-found: warn
+
   update-manifest:
     if: >-
       always() &&
       inputs.publish_github_release &&
+      inputs.verify_windows_candidate_run_id == '' &&
       (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
       (needs.windows.result == 'success' || needs.windows.result == 'skipped')
     needs:
