@@ -51,6 +51,7 @@ function Invoke-GitCloneWithRetry {
 
 $shallowArguments = @(
     "clone",
+    "--config", "core.autocrlf=false",
     "--depth", "1",
     "--branch", $SourceRef,
     $Repository,
@@ -62,7 +63,7 @@ if (Invoke-GitCloneWithRetry -Arguments $shallowArguments -Description "Cloning 
 }
 
 Write-Warning "Shallow branch/tag clone failed; falling back to a full clone for commit refs"
-$fullArguments = @("clone", $Repository, $Destination)
+$fullArguments = @("clone", "--config", "core.autocrlf=false", $Repository, $Destination)
 if (-not (Invoke-GitCloneWithRetry -Arguments $fullArguments -Description "Cloning full source repository")) {
     throw "Failed to clone '$Repository' after retrying shallow and full clones"
 }

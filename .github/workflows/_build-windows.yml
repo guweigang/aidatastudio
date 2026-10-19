@@ -114,6 +114,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Verify commit-ref clone preserves embedded bytes
+        shell: pwsh
+        run: python scripts/ci/windows/test-clone-source.py --clone-script scripts/ci/windows/clone-source.ps1
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
