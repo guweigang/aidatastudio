@@ -19,7 +19,7 @@ for binary in (runtime/'lib').iterdir():
     assert 'not found' not in output,(binary,output)
     for line in output.splitlines():
         if '=>' not in line:continue
-        name,target=line.strip().split('=>',1);name=name.strip();target=Path(target.strip().split()[0])
+        name,target=line.strip().split('=>',1);name=name.strip();target=Path(target.rsplit(' (',1)[0].strip())
         if not name.startswith(base):assert target.resolve().is_relative_to(runtime.resolve()),(binary,name,str(target))
         edges.append(dict(binary=binary.name,dependency=name,path=str(target)))
 subprocess.run(['python3','source/desktop/scripts/test-attachment-ocr.py','--runtime',str(runtime),'--normalizer','source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe','--output',str(root/'installed-acceptance.json')],env=env,check=True)
