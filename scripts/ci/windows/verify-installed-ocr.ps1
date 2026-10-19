@@ -40,5 +40,18 @@ $env:PATH = "$env:WINDIR/System32;$env:WINDIR"
 $env:PYTHONUTF8 = "1"
 & $python "$source/desktop/scripts/test-attachment-ocr.py" --runtime "$runtime" --normalizer "$source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe.exe" --output "$evidence/installed-acceptance.json"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; dependencies = $dependencies } |
+# Exercise embedded migrations/contracts outside both the checkout and build SDK.
+$env:PATH = "$installed/backend/runtime/libs;$installed/backend/runtime/bin;$env:PATH"
+$env:LIBDUCKDB_DIR = "$installed/backend/runtime/libs"
+$env:VTABLE_APP_DATA_DIR = Join-Path $evidence "installed-sidecar-app"
+$env:VTABLE_USER_WORKSPACE_ROOT = Join-Path $evidence "installed-sidecar-workspaces"
+$emptyCwd = Join-Path $evidence "empty-cwd"
+New-Item -ItemType Directory -Force -Path $emptyCwd | Out-Null
+Push-Location $emptyCwd
+try {
+  $initialization = & "$installed/backend/bin/vtable-sidecar.exe" ensure-system-workspace
+  if ($LASTEXITCODE -ne 0) { throw "Installed sidecar initialization failed" }
+  if (!(($initialization | ConvertFrom-Json).ok)) { throw "Installed sidecar did not initialize successfully" }
+} finally { Pop-Location }
+[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; installedSidecarInitializedFromEmptyCwd = $true; dependencies = $dependencies } |
   ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$evidence/installed-distribution.json"
