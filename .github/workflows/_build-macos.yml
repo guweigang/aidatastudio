@@ -79,7 +79,7 @@ jobs:
             git checkout "${{ inputs.source_ref }}"
           }
 
-      - name: Clone pinned vjsx
+      - name: Clone latest vjsx
         run: |
           set -eu
           sh scripts/ci/clone-vjsx.sh

@@ -68,7 +68,7 @@ jobs:
             -SourceRef "${{ inputs.source_ref }}" `
             -Destination "$env:SOURCE_DIR"
 
-      - name: Clone pinned vjsx
+      - name: Clone latest vjsx
         shell: bash
         run: sh scripts/ci/clone-vjsx.sh
 
