@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  V_MACOS_V3_NO_FALLBACK: 1
   TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
@@ -48,6 +49,12 @@ jobs:
       - name: Checkout CI repository
         uses: actions/checkout@v4
 
+      - name: Normalize artifact ref
+        id: artifact_ref
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: node scripts/ci/normalize-artifact-ref.mjs
+
       - name: Prepare CNB authentication
         env:
           CNB_ACCESS_TOKEN: ${{ secrets.CNB_ACCESS_TOKEN }}
@@ -66,23 +73,10 @@ jobs:
             git checkout "${{ inputs.source_ref }}"
           }
 
-      - name: Apply Linux vjsx shell compatibility
-        run: |
-          set -euo pipefail
-          script="${SOURCE_DIR}/desktop/scripts/prepare-sidecar.sh"
-          expected='sh "$VJSX_SOURCE/scripts/build-vjsx.sh"'
-          replacement='bash "$VJSX_SOURCE/scripts/build-vjsx.sh"'
-          matches="$(grep -F -c "${expected}" "${script}")"
-          if [ "${matches}" -ne 2 ]; then
-            echo "expected 2 vjsx shell calls in ${script}, found ${matches}" >&2
-            exit 1
-          fi
-          sed -i "s|${expected}|${replacement}|g" "${script}"
-
       - name: Clone vjsx
         run: |
           set -euo pipefail
-          git clone --depth 1 "${VJSX_REPO}" "${VJSX_DIR}"
+          sh scripts/ci/clone-vjsx.sh
 
       - name: Clone V modules
         run: |
@@ -120,7 +114,11 @@ jobs:
             libsasl2-dev \
             librsvg2-dev \
             libsqlite3-dev \
+            libtesseract-dev \
             libssl-dev \
+            libsecret-1-dev \
+            gnome-keyring \
+            dbus-x11 \
             libutf8proc-dev \
             libwebkit2gtk-4.1-dev \
             libxdo-dev \
@@ -132,6 +130,9 @@ jobs:
 
       - name: Install MongoDB C driver
         run: sh "$GITHUB_WORKSPACE/scripts/ci/linux/install-mongodb.sh"
+
+      - name: Install DuckDB native library
+        run: bash scripts/ci/linux/install-duckdb.sh
 
       - name: Install V
         run: sh "$GITHUB_WORKSPACE/scripts/ci/install-v.sh"
@@ -156,6 +157,14 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Validate Linux OS credential vault
+        working-directory: source
+        run: bash desktop/scripts/test-linux-secret-vault.sh
+
+      - name: Build and stage native attachment OCR
+        working-directory: source
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/linux/stage-attachment-ocr.sh"
 
       - name: Install desktop dependencies
         working-directory: source/desktop
@@ -215,6 +224,9 @@ jobs:
           npm --prefix desktop run build
           cargo check --manifest-path desktop/src-tauri/Cargo.toml
 
+      - name: Stage Linux sidecar dependency closure
+        run: python3 scripts/ci/linux/stage-sidecar-libraries.py
+
       - name: Build Linux package
         working-directory: source
         env:
@@ -223,12 +235,39 @@ jobs:
           VFLAGS: "-cc clang"
         run: |
           set -euo pipefail
-          cargo tauri build --bundles appimage,deb
+          NO_STRIP=1 cargo tauri build --bundles appimage,deb
+
+      - name: Preserve Linux package candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-linux-candidate-${{ github.run_id }}
+          path: |
+            source/desktop/src-tauri/target/release/bundle/deb/*.deb
+            source/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            source/desktop/native/attachment-ocr/target/release/attachment-normalization-probe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify installed Linux OCR runtime
+        run: bash scripts/ci/linux/verify-installed-ocr.sh
+
+      - name: Verify AppImage sealed OCR runtime
+        run: |
+          set -euo pipefail
+          image="$(find "$GITHUB_WORKSPACE/source/desktop/src-tauri/target/release/bundle/appimage" -maxdepth 1 -name '*.AppImage')"
+          mkdir -p "$RUNNER_TEMP/appimage-verification"
+          (cd "$RUNNER_TEMP/appimage-verification" && "$image" --appimage-extract > extraction.log)
+          find "$RUNNER_TEMP/appimage-verification/squashfs-root" -type f > "$RUNNER_TEMP/attachment-ocr-evidence/appimage-files.txt"
+          python3 scripts/ci/linux/verify-installed-ocr.py --file-list "$RUNNER_TEMP/attachment-ocr-evidence/appimage-files.txt" --receipt-prefix appimage
 
       - name: Collect Linux artifacts
         run: |
           set -euo pipefail
           mkdir -p dist/linux
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/native-acceptance.json" dist/linux/ocr-native-acceptance.json
+          cp source/backend/runtime/attachment-ocr/manifest.json dist/linux/ocr-manifest.json
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/installed-"*.json dist/linux/
+          cp "$RUNNER_TEMP/attachment-ocr-evidence/appimage-"*.json dist/linux/
           find source/desktop/src-tauri/target/release/bundle -type f \
             \( -name "*.AppImage" -o -name "*.deb" -o -name "*.tar.gz" -o -name "*.sig" \) \
             -print -exec cp {} dist/linux/ \;
@@ -241,7 +280,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: aidatastudio-linux-${{ inputs.source_ref }}-x64
+          name: aidatastudio-linux-${{ steps.artifact_ref.outputs.value }}-x64
           path: dist/linux/*
           if-no-files-found: error
           retention-days: 14

@@ -14,6 +14,9 @@ permissions:
   contents: write
 
 env:
+  PYTHONUTF8: 1
+  # Release builds must keep the pinned compiler and standard library together.
+  V_MACOS_V3_NO_FALLBACK: 1
   TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
@@ -65,9 +68,9 @@ jobs:
             -SourceRef "${{ inputs.source_ref }}" `
             -Destination "$env:SOURCE_DIR"
 
-      - name: Clone vjsx
-        shell: pwsh
-        run: git clone --depth 1 "$env:VJSX_REPO" "$env:VJSX_DIR"
+      - name: Clone latest vjsx
+        shell: bash
+        run: sh scripts/ci/clone-vjsx.sh
 
       - name: Clone V modules
         shell: pwsh
@@ -106,6 +109,15 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify commit-ref clone preserves embedded bytes
+        shell: pwsh
+        run: python scripts/ci/windows/test-clone-source.py --clone-script scripts/ci/windows/clone-source.ps1
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -114,7 +126,8 @@ jobs:
           cache-dependency-path: source/desktop/package-lock.json
 
       - name: Cache Windows vcpkg binary packages
-        uses: actions/cache@v4
+        id: native_cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/vcpkg-binary-cache
           key: windows-vcpkg-x64-windows-msvc-v1-${{ hashFiles('.github/workflows/_build-windows.yml', 'scripts/ci/windows/*.ps1') }}
@@ -133,7 +146,8 @@ jobs:
             windows-cargo-tools-v2-tauri-${{ env.TAURI_CLI_VERSION }}-
 
       - name: Cache Windows Tauri target
-        uses: actions/cache@v4
+        id: tauri_cache
+        uses: actions/cache/restore@v4
         with:
           path: source/desktop/src-tauri/target
           key: windows-tauri-target-v1-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
@@ -151,6 +165,22 @@ jobs:
       - name: Install Windows native dependencies
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-native-deps.ps1"'
+
+      - name: Save completed native dependency packages
+        if: steps.native_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/vcpkg-binary-cache
+          key: ${{ steps.native_cache.outputs.cache-primary-key }}
+
+      - name: Bind V to the selected native SDK and smoke OpenSSL
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\configure-v-native-sdk.ps1"'
+
+      - name: Build and stage native attachment OCR
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\stage-attachment-ocr.ps1"'
 
       - name: Install desktop dependencies
         working-directory: source/desktop
@@ -186,18 +216,9 @@ jobs:
           cargo check --manifest-path desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Install Tauri CLI
+      - name: Install pinned prebuilt Tauri CLI
         shell: pwsh
-        run: |
-          $expected = "tauri-cli $env:TAURI_CLI_VERSION"
-          $actual = if (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
-            (cargo tauri --version).Trim()
-          }
-          if ($actual -ne $expected) {
-            cargo install tauri-cli --version $env:TAURI_CLI_VERSION --locked --force
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          cargo tauri --version
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-tauri-cli.ps1"'
 
       - name: Prepare audited NSIS upgrade template
         shell: pwsh
@@ -248,9 +269,32 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-package.ps1"'
 
+      - name: Save completed Windows application build cache
+        if: steps.tauri_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source/desktop/src-tauri/target
+          key: ${{ steps.tauri_cache.outputs.cache-primary-key }}
+
+      - name: Retain Windows package candidate before installation checks
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\save-package-candidate.ps1"'
+
+      - name: Upload Windows package candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidatastudio-windows-candidate-${{ github.run_id }}
+          path: dist/windows-candidate/*
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Verify NSIS upgrade preserves app data
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\smoke-installer-upgrade.ps1"'
+
+      - name: Verify installed OCR resources and native dependencies
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\verify-installed-ocr.ps1"'
 
       - name: Collect Windows artifacts
         id: windows_meta
