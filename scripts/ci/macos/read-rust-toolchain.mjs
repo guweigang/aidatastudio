@@ -1,8 +1,8 @@
 import { readFileSync, appendFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-const ciRoot = process.env.GITHUB_WORKSPACE ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const source = resolve(ciRoot, process.env.SOURCE_DIR ?? 'source');
+const ciRoot = process.env.GITHUB_WORKSPACE || resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const source = resolve(ciRoot, process.env.SOURCE_DIR || 'source');
 const manifest = readFileSync(join(source, 'rust-toolchain.toml'), 'utf8');
 const channel = manifest.match(/^channel\s*=\s*"([^"]+)"\s*$/m)?.[1];
 const componentText = manifest.match(/^components\s*=\s*(\[[^\]]*\])/m)?.[1];
