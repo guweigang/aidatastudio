@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -45,8 +45,13 @@ test('source selection is independent of caller cwd and accepts an explicit abso
     assert.deepEqual(trace(), ['check', 'frontend']);
   }
 }));
-test('Rust channel and components come from the selected source rather than a CI version constant', () => fixture(({ run, root }) => {
-  const result = run('read-rust-toolchain.mjs');
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(readFileSync(join(root, 'outputs'), 'utf8').split('\n'), ['toolchain=1.88.0', 'components=rustfmt,llvm-tools-preview', '']);
+test('Rust channel and components come from the selected source rather than a CI version constant', () => fixture(({ run, root, source }) => {
+  mkdirSync(join(root, 'source'));
+  writeFileSync(join(root, 'source/rust-toolchain.toml'), readFileSync(join(source, 'rust-toolchain.toml')));
+  for (const SOURCE_DIR of ['source with spaces', '']) {
+    writeFileSync(join(root, 'outputs'), '');
+    const result = run('read-rust-toolchain.mjs', { SOURCE_DIR });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(readFileSync(join(root, 'outputs'), 'utf8').split('\n'), ['toolchain=1.88.0', 'components=rustfmt,llvm-tools-preview', '']);
+  }
 }));
