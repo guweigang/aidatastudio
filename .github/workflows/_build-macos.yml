@@ -20,7 +20,6 @@ permissions:
   contents: write
 
 env:
-  TAURI_CLI_VERSION: 2.11.4
   SOURCE_DIR: source
   VJSX_DIR: vjsx
   VDUCKDB_DIR: vduckdb
@@ -114,8 +113,26 @@ jobs:
       - name: Install V
         run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/install-v.sh"
 
-      - name: Setup Rust
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/desktop/package-lock.json
+
+      - name: Test source workflow adapter
+        run: node --test "$GITHUB_WORKSPACE/scripts/ci/macos/source-workflow.test.mjs"
+
+      - name: Read source Rust toolchain
+        id: rust_pin
+        run: node "$GITHUB_WORKSPACE/scripts/ci/macos/read-rust-toolchain.mjs"
+
+      - name: Setup pinned Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust_pin.outputs.toolchain }}
+          components: ${{ steps.rust_pin.outputs.components }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Cache macOS Cargo dependencies
         uses: actions/cache@v4
@@ -124,24 +141,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             source/desktop/src-tauri/target
-          key: macos-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target_mode }}-cargo-${{ hashFiles('source/desktop/src-tauri/Cargo.lock') }}
+          key: macos-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target_mode }}-cargo-${{ hashFiles('source/rust-toolchain.toml', 'source/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             macos-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target_mode }}-cargo-
             macos-${{ runner.os }}-${{ runner.arch }}-cargo-
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: source/desktop/package-lock.json
-
       - name: Install desktop dependencies
-        working-directory: source/desktop
-        run: npm ci
-
-      - name: Install Tauri CLI
-        run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/install-tauri.sh"
+        run: npm --prefix "$GITHUB_WORKSPACE/$SOURCE_DIR/desktop" ci
 
       - name: Configure Tauri updater
         if: inputs.publish_github_release
@@ -152,8 +158,7 @@ jobs:
           TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://update.aidata.studio/latest.json' }}
         run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/configure-updater.sh"
 
-      - name: Check desktop and Tauri build inputs
-        working-directory: source
+      - name: Check desktop build inputs
         env:
           VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
           VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
@@ -161,7 +166,6 @@ jobs:
         run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/check-build-inputs.sh"
 
       - name: Build macOS release
-        working-directory: source
         env:
           RELEASE_MODE: ${{ inputs.release_mode }}
           TARGET_MODE: ${{ matrix.target_mode }}

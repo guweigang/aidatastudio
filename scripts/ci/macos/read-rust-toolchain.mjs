@@ -1,0 +1,12 @@
+import { readFileSync, appendFileSync } from 'node:fs';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const ciRoot = process.env.GITHUB_WORKSPACE || resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const source = resolve(ciRoot, process.env.SOURCE_DIR || 'source');
+const manifest = readFileSync(join(source, 'rust-toolchain.toml'), 'utf8');
+const channel = manifest.match(/^channel\s*=\s*"([^"]+)"\s*$/m)?.[1];
+const componentText = manifest.match(/^components\s*=\s*(\[[^\]]*\])/m)?.[1];
+if (!channel || !/^[a-zA-Z0-9._-]+$/.test(channel) || !componentText) throw new Error('Source must provide a pinned Rust channel and component list');
+const components = JSON.parse(componentText);
+if (!Array.isArray(components) || components.some(value => typeof value !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(value))) throw new Error('Invalid Rust component list');
+appendFileSync(process.env.GITHUB_OUTPUT, `toolchain=${channel}\ncomponents=${components.join(',')}\n`);
