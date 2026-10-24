@@ -149,6 +149,19 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix "$GITHUB_WORKSPACE/$SOURCE_DIR/desktop" ci
 
+      - name: Test desktop unit regressions
+        run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/run-source-workflow.sh" test unit
+
+      - name: Test Rust regressions
+        run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/run-source-workflow.sh" test rust
+
+      - name: Test V and Rust SQL syntax boundary
+        env:
+          VTABLE_VJSX_PATH: ${{ github.workspace }}/${{ env.VJSX_DIR }}
+          VTABLE_VCLICKHOUSE_PATH: ${{ github.workspace }}/${{ env.VCLICKHOUSE_DIR }}
+          VFLAGS: "-cc clang"
+        run: sh "$GITHUB_WORKSPACE/scripts/ci/macos/run-source-workflow.sh" test sql
+
       - name: Configure Tauri updater
         if: inputs.publish_github_release
         env:
