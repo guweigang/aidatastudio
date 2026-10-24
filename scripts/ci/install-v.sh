@@ -9,19 +9,14 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_PATH:?GITHUB_PATH is required}"
 : "${V_REPO:?V_REPO is required}"
-: "${V_BRANCH:?V_BRANCH is required}"
 : "${V_COMMIT:?V_COMMIT is required}"
 
 install_root="${RUNNER_TEMP}/v"
 
-git clone \
-  --branch "$V_BRANCH" \
-  --single-branch \
-  --depth 1 \
-  "$V_REPO" \
-  "$install_root"
-
-git -C "$install_root" checkout --detach "$V_COMMIT"
+git init "$install_root"
+git -C "$install_root" remote add origin "$V_REPO"
+git -C "$install_root" fetch --depth 1 origin "$V_COMMIT"
+git -C "$install_root" checkout --detach FETCH_HEAD
 actual_commit="$(git -C "$install_root" rev-parse HEAD)"
 if [ "$actual_commit" != "$V_COMMIT" ]; then
   echo "unexpected V commit: $actual_commit; expected $V_COMMIT" >&2

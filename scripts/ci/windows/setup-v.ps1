@@ -19,22 +19,25 @@ foreach ($line in Get-Content $toolchainPath) {
   }
   $toolchain[$key] = $value
 }
-foreach ($required in @("V_REPO", "V_BRANCH", "V_COMMIT")) {
+foreach ($required in @("V_REPO", "V_COMMIT")) {
   if (!$toolchain[$required]) {
     throw "missing $required in $toolchainPath"
   }
 }
 $vRepo = $toolchain["V_REPO"]
-$vBranch = $toolchain["V_BRANCH"]
 $vCommit = $toolchain["V_COMMIT"]
 
 $installRoot = Join-Path $env:RUNNER_TEMP "vlang"
 if (Test-Path $installRoot) {
   Remove-Item -Recurse -Force $installRoot
 }
-git clone --branch $vBranch --single-branch --depth 1 $vRepo $installRoot
+git init $installRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-git -C $installRoot checkout --detach $vCommit
+git -C $installRoot remote add origin $vRepo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git -C $installRoot fetch --depth 1 origin $vCommit
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git -C $installRoot checkout --detach FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $actualCommit = (git -C $installRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
