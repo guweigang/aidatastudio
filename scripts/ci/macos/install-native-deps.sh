@@ -1,7 +1,17 @@
 #!/bin/sh
 
 set -eu
-brew update
+# Keep the runner image's native dependency snapshot. Updating Homebrew here
+# upgrades unrelated tools and can turn an Intel build into hours of source builds.
+export HOMEBREW_NO_AUTO_UPDATE=1
+export HOMEBREW_NO_INSTALL_UPGRADE=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
+core_tap="$(brew --repository homebrew/core 2>/dev/null || true)"
+if [ -n "$core_tap" ] && [ -d "$core_tap" ]; then
+  # Runner images may carry compatible formula revisions in their local tap.
+  export HOMEBREW_NO_INSTALL_FROM_API=1
+fi
 brew install bdw-gc libpq mongo-c-driver mysql-client openssl@3 pkg-config sqlite uv
 mysql_prefix="$(brew --prefix mysql-client)"
 libpq_prefix="$(brew --prefix libpq)"

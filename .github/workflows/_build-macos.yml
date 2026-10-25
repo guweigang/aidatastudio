@@ -121,7 +121,7 @@ jobs:
           cache-dependency-path: source/desktop/package-lock.json
 
       - name: Test source workflow adapter
-        run: node --test "$GITHUB_WORKSPACE/scripts/ci/macos/source-workflow.test.mjs"
+        run: node --test "$GITHUB_WORKSPACE"/scripts/ci/macos/*.test.mjs
 
       - name: Read source Rust toolchain
         id: rust_pin
