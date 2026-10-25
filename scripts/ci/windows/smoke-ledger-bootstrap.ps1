@@ -1,12 +1,12 @@
 $ErrorActionPreference = "Stop"
 $sidecar = (Resolve-Path "backend/bin/vtable-sidecar.exe").Path
 $probeRoot = Join-Path $env:RUNNER_TEMP ("ads-ledger-bootstrap-" + [Guid]::NewGuid().ToString("N"))
-$names = @("VTABLE_APP_DATA_DIR", "VTABLE_WORKSPACE_ROOT", "VTABLE_APP_STATE_RUNTIME_REQUIRED")
+$names = @("VTABLE_APP_DATA_DIR", "VTABLE_USER_WORKSPACE_ROOT", "VTABLE_APP_STATE_RUNTIME_REQUIRED")
 $saved = @{}
 foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 try {
   $env:VTABLE_APP_DATA_DIR = Join-Path $probeRoot "app"
-  $env:VTABLE_WORKSPACE_ROOT = Join-Path $probeRoot "workspaces"
+  $env:VTABLE_USER_WORKSPACE_ROOT = Join-Path $probeRoot "workspaces"
   Remove-Item Env:VTABLE_APP_STATE_RUNTIME_REQUIRED -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force $env:VTABLE_APP_DATA_DIR | Out-Null
   # Exercise the same maintenance commands as application setup, including FTS5.
