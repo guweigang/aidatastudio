@@ -2,7 +2,7 @@
 
 set -eu
 brew update
-brew install bdw-gc libpq mongo-c-driver mysql-client openssl@3 pkg-config sqlite
+brew install bdw-gc libpq mongo-c-driver mysql-client openssl@3 pkg-config sqlite uv
 mysql_prefix="$(brew --prefix mysql-client)"
 libpq_prefix="$(brew --prefix libpq)"
 mongo_prefix="$(brew --prefix mongo-c-driver)"
