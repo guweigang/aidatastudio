@@ -158,6 +158,10 @@ jobs:
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\setup-v.ps1"'
 
+      - name: Test pinned V native SDK binding
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\test-v-native-sdk.ps1" -PinnedVRoot (Join-Path $env:RUNNER_TEMP "vlang")'
+
       - name: Install DuckDB native library
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-duckdb.ps1"'
