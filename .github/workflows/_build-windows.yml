@@ -253,6 +253,11 @@ jobs:
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\doctor-runtime.ps1"'
 
+      - name: Smoke Windows application ledger bootstrap
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\smoke-ledger-bootstrap.ps1"'
+
       - name: Smoke Windows notebook runtime
         working-directory: source
         shell: pwsh
