@@ -55,5 +55,6 @@ try {
   if ($exitCode -ne 0) { throw "Installed sidecar initialization failed: $initialization" }
   if (!(($initialization | ConvertFrom-Json).ok)) { throw "Installed sidecar did not initialize successfully: $initialization" }
 } finally { Pop-Location }
+& (Join-Path $PSScriptRoot "smoke-installed-app.ps1") -InstalledRoot $installed -EvidenceRoot $evidence -WorkingDirectory $emptyCwd
 [ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; installedSidecarInitializedFromEmptyCwd = $true; dependencies = $dependencies } |
   ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$evidence/installed-distribution.json"
