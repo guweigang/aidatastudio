@@ -166,6 +166,18 @@ jobs:
         working-directory: source
         run: bash "$GITHUB_WORKSPACE/scripts/ci/linux/stage-attachment-ocr.sh"
 
+      - name: Diagnose native OCR failure with synthetic fixture
+        if: failure()
+        run: |
+          set -eu
+          sudo apt-get install -y --no-install-recommends gdb
+          worker="$GITHUB_WORKSPACE/source/backend/runtime/attachment-ocr/bin/vtable-attachment-ocr"
+          input="$GITHUB_WORKSPACE/source/desktop/src-tauri/testdata/attachments/scan-scan.pdf"
+          if [ -x "$worker" ]; then
+            options='{"schemaVersion":1,"pdfMode":"auto","languages":["en"]}'
+            gdb --batch -ex 'set pagination off' -ex "run '$options' < $input" -ex 'thread apply all bt' --args "$worker"
+          fi
+
       - name: Install desktop dependencies
         working-directory: source/desktop
         run: npm ci
