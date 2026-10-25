@@ -19,7 +19,7 @@ foreach ($line in Get-Content $toolchainPath) {
   }
   $toolchain[$key] = $value
 }
-foreach ($required in @("V_REPO", "V_COMMIT", "VC_REPO", "VC_COMMIT", "TCC_WINDOWS_REPO", "TCC_WINDOWS_COMMIT")) {
+foreach ($required in @("V_REPO", "V_COMMIT")) {
   if (!$toolchain[$required]) {
     throw "missing $required in $toolchainPath"
   }
@@ -37,28 +37,12 @@ git -C $installRoot remote add origin $vRepo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 git -C $installRoot fetch --depth 1 origin $vCommit
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-git -C $installRoot checkout --detach $vCommit
+git -C $installRoot checkout --detach FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $actualCommit = (git -C $installRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($actualCommit -ne $vCommit) {
   throw "unexpected V commit: $actualCommit; expected $vCommit"
-}
-foreach ($entry in @(
-  @{ Path = "vc"; Repo = $toolchain["VC_REPO"]; Commit = $toolchain["VC_COMMIT"] },
-  @{ Path = "thirdparty/tcc"; Repo = $toolchain["TCC_WINDOWS_REPO"]; Commit = $toolchain["TCC_WINDOWS_COMMIT"] }
-)) {
-  $dependency = Join-Path $installRoot $entry.Path
-  git init $dependency
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  git -C $dependency remote add origin $entry.Repo
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  git -C $dependency fetch --depth 1 origin $entry.Commit
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  git -C $dependency checkout --detach $entry.Commit
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  $actual = (git -C $dependency rev-parse HEAD).Trim()
-  if ($actual -ne $entry.Commit) { throw "V bootstrap dependency mismatch: $dependency" }
 }
 $makev = Join-Path $installRoot "makev.bat"
 $makevContent = Get-Content -Raw $makev
@@ -67,7 +51,7 @@ if ($makevContent -notmatch "-lbcrypt") {
   Set-Content -NoNewline -Path $makev -Value $makevContent
 }
 Push-Location $installRoot
-cmd /c makev.bat -msvc --local
+cmd /c makev.bat -msvc
 $vBuildExitCode = $LASTEXITCODE
 Pop-Location
 if ($vBuildExitCode -ne 0) { exit $vBuildExitCode }
