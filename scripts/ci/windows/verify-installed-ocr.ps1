@@ -47,14 +47,24 @@ $env:VTABLE_APP_DATA_DIR = Join-Path $evidence "installed-sidecar-app"
 $env:VTABLE_USER_WORKSPACE_ROOT = Join-Path $evidence "installed-sidecar-workspaces"
 $emptyCwd = Join-Path $evidence "empty-cwd"
 New-Item -ItemType Directory -Force -Path $emptyCwd | Out-Null
-Push-Location $emptyCwd
+# Absolute source fallback paths can hide missing installed resources even from
+# an empty CWD. Make the source checkout unavailable for both installed probes.
+$offlineSource = "$source.installed-probe-$([guid]::NewGuid())"
+Move-Item -LiteralPath $source -Destination $offlineSource
 try {
-  $initialization = & "$installed/backend/bin/vtable-sidecar.exe" ensure-system-workspace
-  $exitCode = $LASTEXITCODE
-  $initialization | Set-Content -Encoding utf8 "$evidence/installed-sidecar-initialization.json"
-  if ($exitCode -ne 0) { throw "Installed sidecar initialization failed: $initialization" }
-  if (!(($initialization | ConvertFrom-Json).ok)) { throw "Installed sidecar did not initialize successfully: $initialization" }
-} finally { Pop-Location }
-& (Join-Path $PSScriptRoot "smoke-installed-app.ps1") -InstalledRoot $installed -EvidenceRoot $evidence -WorkingDirectory $emptyCwd
-[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; installedSidecarInitializedFromEmptyCwd = $true; dependencies = $dependencies } |
+  if (Test-Path $source) { throw "Source checkout is still visible to installed probes" }
+  Push-Location $emptyCwd
+  try {
+    $initialization = & "$installed/backend/bin/vtable-sidecar.exe" ensure-system-workspace
+    $exitCode = $LASTEXITCODE
+    $initialization | Set-Content -Encoding utf8 "$evidence/installed-sidecar-initialization.json"
+    if ($exitCode -ne 0) { throw "Installed sidecar initialization failed: $initialization" }
+    if (!(($initialization | ConvertFrom-Json).ok)) { throw "Installed sidecar did not initialize successfully: $initialization" }
+  } finally { Pop-Location }
+  & (Join-Path $PSScriptRoot "smoke-installed-app.ps1") -InstalledRoot $installed -EvidenceRoot $evidence -WorkingDirectory $emptyCwd -SourceCheckout $source
+  if (Test-Path $source) { throw "Installed probe recreated the source checkout path" }
+} finally {
+  Move-Item -LiteralPath $offlineSource -Destination $source
+}
+[ordered]@{ status = "passed"; installedRoot = $installed; platform = $manifest.platform; resourceCount = @($manifest.files.PSObject.Properties).Count; sdkPathsRemoved = $true; sourceCheckoutUnavailable = $true; installedSidecarInitializedFromEmptyCwd = $true; dependencies = $dependencies } |
   ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$evidence/installed-distribution.json"

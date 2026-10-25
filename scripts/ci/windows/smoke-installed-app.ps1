@@ -1,9 +1,11 @@
 param(
   [Parameter(Mandatory)][string]$InstalledRoot,
   [Parameter(Mandatory)][string]$EvidenceRoot,
-  [Parameter(Mandatory)][string]$WorkingDirectory
+  [Parameter(Mandatory)][string]$WorkingDirectory,
+  [Parameter(Mandatory)][string]$SourceCheckout
 )
 $ErrorActionPreference = "Stop"
+if (Test-Path $SourceCheckout) { throw "Installed startup probe requires an unavailable source checkout" }
 $binaries = @(Get-ChildItem $InstalledRoot -File -Filter "*.exe" | Where-Object { $_.Name -notmatch 'uninstall' })
 if ($binaries.Count -ne 1) { throw "Expected one installed application executable under $InstalledRoot" }
 $exe = $binaries[0].FullName
@@ -42,6 +44,7 @@ try {
     responding = $true
     isolatedDataDirectory = $env:VTABLE_APP_DATA_DIR
     appDatabaseCreated = $true
+    sourceCheckoutUnavailable = $true
     workingDirectory = $WorkingDirectory
     path = $env:PATH
   } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $EvidenceRoot "installed-app-startup.json")
