@@ -35,8 +35,17 @@ if ($env:TAURI_BUILD_CONFIG -and $null -eq $updaterArtifact) {
   Get-ChildItem -Path $dist -File | Sort-Object Name | ForEach-Object { Write-Host $_.FullName }
   throw "Windows updater artifact/signature not found under $dist"
 }
+$evidenceRoot = Join-Path $env:RUNNER_TEMP "attachment-ocr-evidence"
+foreach ($name in @("native-acceptance.json", "installed-acceptance.json", "installed-distribution.json", "manifest.json")) {
+  $evidence = Join-Path $evidenceRoot $name
+  if (!(Test-Path $evidence -PathType Leaf)) { throw "OCR packaging evidence missing: $evidence" }
+  Copy-Item $evidence (Join-Path $dist "ocr-$name")
+}
+$sourceCommit = (git -C source rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $metadata = [ordered]@{
   source_ref = $env:SOURCE_REF
+  source_commit = $sourceCommit
   platform = "windows"
   arch = "x64"
   target = "x86_64-pc-windows-msvc"

@@ -37,7 +37,7 @@ $flags += @(
   "-ldflags", $env:MONGOC_IMPORT_LIB,
   "-ldflags", $env:BSON_IMPORT_LIB
 )
-$flags += @("-showcc")
+$flags += @("-prod", "-showcc")
 & v @flags -o $builtSidecar "backend\cmd\vtable_sidecar"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (!(Test-Path $builtSidecar)) { throw "sidecar build did not produce $builtSidecar" }
