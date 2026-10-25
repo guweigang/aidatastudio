@@ -36,7 +36,7 @@ if ($env:TAURI_BUILD_CONFIG -and $null -eq $updaterArtifact) {
   throw "Windows updater artifact/signature not found under $dist"
 }
 $evidenceRoot = Join-Path $env:RUNNER_TEMP "attachment-ocr-evidence"
-foreach ($name in @("native-acceptance.json", "installed-acceptance.json", "installed-distribution.json", "manifest.json")) {
+foreach ($name in @("native-acceptance.json", "installed-acceptance.json", "installed-distribution.json", "installed-app-startup.json", "manifest.json")) {
   $evidence = Join-Path $evidenceRoot $name
   if (!(Test-Path $evidence -PathType Leaf)) { throw "OCR packaging evidence missing: $evidence" }
   Copy-Item $evidence (Join-Path $dist "ocr-$name")

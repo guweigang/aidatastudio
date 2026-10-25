@@ -158,6 +158,10 @@ jobs:
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\setup-v.ps1"'
 
+      - name: Test pinned V native SDK binding
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\test-v-native-sdk.ps1" -PinnedVRoot (Join-Path $env:RUNNER_TEMP "vlang")'
+
       - name: Install DuckDB native library
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\install-duckdb.ps1"'
@@ -248,6 +252,11 @@ jobs:
         working-directory: source
         shell: pwsh
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\doctor-runtime.ps1"'
+
+      - name: Smoke Windows application ledger bootstrap
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\smoke-ledger-bootstrap.ps1"'
 
       - name: Smoke Windows notebook runtime
         working-directory: source
