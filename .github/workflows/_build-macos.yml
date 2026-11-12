@@ -50,7 +50,7 @@ jobs:
   macos:
     name: macOS DMG (${{ matrix.target_mode }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ matrix.target_mode == 'intel' && 150 || 90 }}
     strategy:
       fail-fast: false
       matrix:

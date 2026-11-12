@@ -15,9 +15,15 @@ on:
         description: Release notes
         required: true
         type: string
+      reuse_run_id:
+        description: Prior release run with successful Apple Silicon, Windows and Linux artifacts
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: aidatastudio-release-${{ inputs.version }}
@@ -31,6 +37,7 @@ jobs:
         env:
           SOURCE_REF: ${{ inputs.source_ref }}
           VERSION: ${{ inputs.version }}
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -42,6 +49,16 @@ jobs:
             echo "Release v$VERSION already exists" >&2
             exit 1
           fi
+          if [[ -n "$REUSE_RUN_ID" ]]; then
+            if [[ ! "$REUSE_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "The prior release run ID must be numeric" >&2
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID" --jq '.path' | grep -Fx '.github/workflows/release.yml'
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REUSE_RUN_ID/jobs" |
+              jq -e '[.jobs[] | select(.conclusion == "success") | .name] |
+                contains(["macos / macOS DMG (apple-silicon)", "windows / Windows package (x64)", "linux / Linux package (x64)"])'
+          fi
 
   macos:
     needs: preflight
@@ -49,13 +66,14 @@ jobs:
     with:
       source_ref: ${{ inputs.source_ref }}
       release_mode: unsigned
-      target_mode: both
+      target_mode: ${{ inputs.reuse_run_id != '' && 'intel' || 'both' }}
       prepare_updater: true
       publish_github_release: false
     secrets: inherit
 
   windows:
     needs: preflight
+    if: inputs.reuse_run_id == ''
     uses: ./.github/workflows/_build-windows.yml
     with:
       source_ref: ${{ inputs.source_ref }}
@@ -65,6 +83,7 @@ jobs:
 
   linux:
     needs: preflight
+    if: inputs.reuse_run_id == ''
     uses: ./.github/workflows/linux.yml
     with:
       source_ref: ${{ inputs.source_ref }}
@@ -72,6 +91,10 @@ jobs:
 
   publish:
     needs: [macos, windows, linux]
+    if: >-
+      ${{ !cancelled() && needs.macos.result == 'success' &&
+      ((inputs.reuse_run_id == '' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+       (inputs.reuse_run_id != '' && needs.windows.result == 'skipped' && needs.linux.result == 'skipped')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +102,13 @@ jobs:
         with:
           pattern: aidatastudio-*-${{ inputs.source_ref }}-*
           path: dist-artifacts
+      - uses: actions/download-artifact@v4
+        if: inputs.reuse_run_id != ''
+        with:
+          pattern: aidatastudio-*-${{ inputs.source_ref }}-*
+          path: dist-artifacts
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_run_id }}
       - name: Verify and publish all installers
         env:
           VERSION: ${{ inputs.version }}
