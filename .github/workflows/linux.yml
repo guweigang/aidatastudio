@@ -240,6 +240,8 @@ jobs:
           VFLAGS: "-cc clang"
         run: |
           set -euo pipefail
+          # The Cargo cache can restore bundle files from a previous release.
+          rm -rf desktop/src-tauri/target/release/bundle
           NO_STRIP=1 cargo tauri build --bundles appimage,deb
 
       - name: Preserve Linux package candidate
