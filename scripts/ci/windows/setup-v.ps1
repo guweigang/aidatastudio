@@ -19,7 +19,7 @@ foreach ($line in Get-Content $toolchainPath) {
   }
   $toolchain[$key] = $value
 }
-foreach ($required in @("V_REPO", "V_COMMIT")) {
+foreach ($required in @("V_REPO", "V_COMMIT", "VC_REPO", "VC_COMMIT")) {
   if (!$toolchain[$required]) {
     throw "missing $required in $toolchainPath"
   }
@@ -44,6 +44,20 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($actualCommit -ne $vCommit) {
   throw "unexpected V commit: $actualCommit; expected $vCommit"
 }
+$vcCommit = $toolchain["VC_COMMIT"]
+$bootstrapRoot = Join-Path $installRoot "vc"
+git init $bootstrapRoot
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git -C $bootstrapRoot fetch --depth 1 $toolchain["VC_REPO"] $vcCommit
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+git -C $bootstrapRoot checkout --detach FETCH_HEAD
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$actualVcCommit = (git -C $bootstrapRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($actualVcCommit -ne $vcCommit) {
+  throw "unexpected vc commit: $actualVcCommit; expected $vcCommit"
+}
+Write-Host "V bootstrap vc commit: $actualVcCommit"
 $makev = Join-Path $installRoot "makev.bat"
 $makevContent = Get-Content -Raw $makev
 if ($makevContent -notmatch "-lbcrypt") {
@@ -51,10 +65,15 @@ if ($makevContent -notmatch "-lbcrypt") {
   Set-Content -NoNewline -Path $makev -Value $makevContent
 }
 Push-Location $installRoot
-cmd /c makev.bat -msvc
-$vBuildExitCode = $LASTEXITCODE
-Pop-Location
-if ($vBuildExitCode -ne 0) { exit $vBuildExitCode }
+try {
+  # Fetch TCC separately so the bootstrap can use vc in local mode.
+  cmd /c makev.bat latest_tcc
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  cmd /c makev.bat -msvc --local
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally {
+  Pop-Location
+}
 $sqliteSource = Join-Path $installRoot "thirdparty\sqlite\sqlite3.cpp"
 if (!(Test-Path $sqliteSource)) {
   Push-Location $installRoot
@@ -75,6 +94,11 @@ $verifiedCommit = (git -C $installRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($verifiedCommit -ne $vCommit) {
   throw "V checkout changed during build: $verifiedCommit; expected $vCommit"
+}
+$verifiedVcCommit = (git -C $bootstrapRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($verifiedVcCommit -ne $vcCommit) {
+  throw "vc checkout changed during build: $verifiedVcCommit; expected $vcCommit"
 }
 Write-Host "V commit: $verifiedCommit"
 git -C $installRoot log -1 --oneline
