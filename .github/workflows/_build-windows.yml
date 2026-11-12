@@ -209,6 +209,20 @@ jobs:
           VTABLE_SIDECAR_V_FLAGS: ${{ env.VTABLE_WINDOWS_SIDECAR_V_FLAGS }}
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\build-sidecar.ps1"'
 
+      - name: Stage sidecar runtime DLLs
+        working-directory: source
+        shell: pwsh
+        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\stage-runtime.ps1"'
+
+      - name: Build Satori runtime
+        working-directory: source/integration/satori
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Check desktop and Tauri build inputs
         working-directory: source
         shell: pwsh
@@ -237,11 +251,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_UPDATER_ENDPOINT: ${{ vars.TAURI_UPDATER_ENDPOINT || 'https://update.aidata.studio/latest.json' }}
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\configure-updater.ps1"'
-
-      - name: Stage sidecar runtime DLLs
-        working-directory: source
-        shell: pwsh
-        run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\stage-runtime.ps1"'
 
       - name: Inspect Windows sidecar dependencies
         working-directory: source
