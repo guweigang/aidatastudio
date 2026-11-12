@@ -1,6 +1,16 @@
 name: Upload AIData Studio release to R2
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of the already published release
+        required: true
+        type: string
+      tag:
+        description: Tag of the already published release
+        required: true
+        type: string
   workflow_call:
     inputs:
       version:
@@ -24,14 +34,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          test -n "${RELEASE_TAG}"
+          if [[ ! "$EXPECTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$RELEASE_TAG" != "v$EXPECTED_VERSION" ]]; then
+            echo "Release version and tag do not match" >&2
+            exit 1
+          fi
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft or .isPrerelease) | not' | grep -Fx true
+          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          if [[ "$latest_tag" != "$RELEASE_TAG" ]]; then
+            echo "Refusing to replace the updater with a release other than the latest stable release" >&2
+            exit 1
+          fi
           mkdir -p dist/release
           gh release download "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --dir dist/release
-          test -f dist/release/latest.json
+          jq -e --arg version "$EXPECTED_VERSION" '.version == $version' dist/release/latest.json
           find dist/release -maxdepth 1 -type f -print | sort
 
       - name: Point updater manifest at Cloudflare R2

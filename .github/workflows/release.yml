@@ -169,6 +169,7 @@ jobs:
 
   upload-r2:
     needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     uses: ./.github/workflows/_upload-r2.yml
     with:
       version: ${{ inputs.version }}
