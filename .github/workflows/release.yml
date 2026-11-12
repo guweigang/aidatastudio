@@ -1,0 +1,146 @@
+name: Release AIData Studio
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Full CNB source commit SHA
+        required: true
+        type: string
+      version:
+        description: Release version without the v prefix
+        required: true
+        type: string
+      notes:
+        description: Release notes
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aidatastudio-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release inputs
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_REF" =~ ^[a-f0-9]{40}$ || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "A full CNB commit SHA and a version such as 0.9.1 are required" >&2
+            exit 1
+          fi
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists" >&2
+            exit 1
+          fi
+
+  macos:
+    needs: preflight
+    uses: ./.github/workflows/_build-macos.yml
+    with:
+      source_ref: ${{ inputs.source_ref }}
+      release_mode: unsigned
+      target_mode: both
+      prepare_updater: true
+      publish_github_release: false
+    secrets: inherit
+
+  windows:
+    needs: preflight
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      source_ref: ${{ inputs.source_ref }}
+      prepare_updater: true
+      publish_github_release: false
+    secrets: inherit
+
+  linux:
+    needs: preflight
+    uses: ./.github/workflows/linux.yml
+    with:
+      source_ref: ${{ inputs.source_ref }}
+    secrets: inherit
+
+  publish:
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: aidatastudio-*-${{ inputs.source_ref }}-*
+          path: dist-artifacts
+      - name: Verify and publish all installers
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir dist-release
+          for spec in macos:apple-silicon macos:intel windows:x64 linux:x64; do
+            IFS=: read -r platform arch <<< "$spec"
+            dirs=(dist-artifacts/aidatastudio-"$platform"-*-"$arch")
+            if (( ${#dirs[@]} != 1 )); then
+              echo "Expected one artifact directory for $spec" >&2
+              exit 1
+            fi
+            case "$platform" in
+              macos) extensions=(dmg) ;;
+              windows) extensions=(exe) ;;
+              linux) extensions=(deb AppImage) ;;
+            esac
+            for extension in "${extensions[@]}"; do
+              installers=("${dirs[0]}"/*"$VERSION"*."$extension")
+              if (( ${#installers[@]} != 1 )); then
+                echo "Expected one $extension installer for $spec at version $VERSION" >&2
+                exit 1
+              fi
+              cp -- "${installers[0]}" dist-release/
+            done
+            updater_files=("${dirs[0]}"/*"$VERSION"*.app.tar.gz "${dirs[0]}"/*"$VERSION"*.sig "${dirs[0]}"/*"$VERSION"*.zip)
+            if (( ${#updater_files[@]} )); then
+              cp -- "${updater_files[@]}" dist-release/
+            fi
+          done
+          actual_version="$(node desktop/scripts/generate-tauri-latest-json.mjs dist-artifacts)"
+          if [[ "$actual_version" != "$VERSION" ]]; then
+            echo "Expected updater version $VERSION, got $actual_version" >&2
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const manifest = JSON.parse(fs.readFileSync('latest.json', 'utf8'));
+          for (const key of ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64']) {
+            const entry = manifest.platforms[key];
+            if (!entry?.signature) throw new Error(`Missing updater signature for ${key}`);
+            const asset = path.basename(decodeURIComponent(new URL(entry.url).pathname));
+            if (!fs.existsSync(path.join('dist-release', asset))) throw new Error(`Missing updater asset ${asset}`);
+          }
+          manifest.notes = process.env.NOTES;
+          fs.writeFileSync('dist-release/latest.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          (cd dist-release && sha256sum * > sha256sums.txt)
+          printf '%s\n' "$NOTES" > release-notes.txt
+          gh release create "v$VERSION" dist-release/* --draft --target "$GITHUB_SHA" \
+            --title "AIData Studio $VERSION" --notes-file release-notes.txt
+          gh release edit "v$VERSION" --draft=false --latest
+
+  upload-r2:
+    needs: publish
+    uses: ./.github/workflows/_upload-r2.yml
+    with:
+      version: ${{ inputs.version }}
+      tag: v${{ inputs.version }}
+    secrets: inherit

@@ -6,6 +6,9 @@ on:
       source_ref:
         required: true
         type: string
+      prepare_updater:
+        type: boolean
+        default: false
       publish_github_release:
         required: true
         type: boolean
@@ -243,7 +246,7 @@ jobs:
         run: '& "$env:GITHUB_WORKSPACE\scripts\ci\windows\prepare-nsis-template.ps1"'
 
       - name: Configure Tauri updater
-        if: inputs.publish_github_release
+        if: inputs.prepare_updater || inputs.publish_github_release
         shell: pwsh
         env:
           TAURI_UPDATER_PUBLIC_KEY_VAR: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
